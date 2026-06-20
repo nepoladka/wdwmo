@@ -1,99 +1,95 @@
-# wdwmo - windows dwm overlay
+# wdwmo — Windows DWM Overlay
 
-**Windows Desktop Window Manager overlay through an internal DirectX render-pipeline hook in `dwm.exe`.**
+**A Windows Desktop Window Manager overlay implemented through an internal DirectX render-pipeline hook in `dwm.exe`.**
 
 `wdwmo` is an educational and portfolio-oriented project that renders directly into the Desktop Window Manager composition pipeline. Instead of creating a transparent top-level window, the overlay code runs inside `dwm.exe`, intercepts an internal DWM present call, obtains the Direct3D 11 render target used for a particular display, and delegates initialization and drawing to user-provided callbacks.
 
 > [!WARNING]
-> The project is intended for research involving reverse engineering and controlled experiments. It implements a concept rather than serving as a finished product. We are not liable for consequences resulting from the use of this project for purposes other than those intended.
-
+> The project is intended for reverse-engineering research and controlled experiments. It demonstrates a concept rather than serving as a finished product. The author is not liable for consequences resulting from the use of this project for purposes other than those intended.
 
 ## Contents
 
 - [Features](#features)
-
 - [Demonstration and tested configurations](#demonstration-and-tested-configurations)
-
 - [Usage, API, integration model](#usage-api-integration-model)
-
 - [TODO](#todo)
-
 - [Explanation](#explanation)
-
-  - [Related works and its limitations](#related-works-and-its-limitations)
-
-  - [How the `dwm.exe` render works](#how-the-dwmexe-render-works)
-
-  - [What do we need](#what-do-we-need)
-
-  - [Restored DXGI undocumented internals](#restored-dxgi-undocumented-internals)
-
+  - [Related projects and their limitations](#related-projects-and-their-limitations)
+  - [How DWM rendering works](#how-dwm-rendering-works)
+  - [What we need](#what-we-need)
+  - [Restored undocumented DXGI internals](#restored-undocumented-dxgi-internals)
   - [Project dependencies](#project-dependencies)
-
   - [Project architecture](#project-architecture)
-
-  - [Multiple initialization](#multiple-initialization)
-
+  - [Multiple initialization](#multiple-initialization-1)
   - [Licensing](#licensing)
+
 ---
 
 ## Features
 
-- ### Callback-based static-library architecture
-The core is not tied to **ImGui** or any specific renderer. The integrating project supplies initialization, render, and optional termination callbacks. The **ImGui** implementation exists only as a `debug` example.
+### Callback-based static-library architecture
 
-- ### Windows 10 and Windows 11 render paths
-The project supports the observed legacy and `CDDisplay` resource paths and selects a resource-access strategy from the generated configuration rather than relying on a single hardcoded `Windows` layout.
+The core is not tied to **ImGui** or any specific renderer. The integrating project supplies initialization, rendering, and optional termination callbacks. The **ImGui** implementation exists only as a Debug example.
 
-- ### Multi-monitor output identification
+### Windows 10 and Windows 11 render paths
+
+The project supports the observed legacy and `CDDisplay` resource paths and selects a resource-access strategy from the generated configuration rather than relying on a single hardcoded Windows layout.
+
+### Multi-monitor output identification
+
 Each discovered render environment includes the physical output identity, desktop rectangle, display names, adapter, buffer size, and VidPn path IDs required to target rendering to the correct screen.
 
-- ### Main display modes
-The `debug` sample demonstrates the information and coordinate handling needed for extended, duplicated, and single-display configurations.
+### Main display modes
 
-- ### Per-monitor scaling
+The Debug sample demonstrates the information and coordinate handling required for extended, duplicated, and single-display configurations.
+
+### Per-monitor scaling
+
 Effective monitor DPI is converted to scaling factors and exposed in the environment. The sample applies these factors when translating a target window's desktop coordinates into screen-relative D3D render-target coordinates.
 
-- ### Multiple initialization
+### Multiple initialization
+
 A shared initialization guard allows callback implementations to be replaced while reusing the existing hook and original-function trampoline.
 
-- ### Automated build-specific configuration
+### Automated build-specific configuration
+
 All offsets currently required by the core are recovered from the supplied `dwmcore.dll` / `dxgi.dll` images and matching PDB files, with the render-target-to-output field discovered at runtime from object identity.
 
-- ### No hardcoded monitor index
+### No hardcoded monitor index
+
 The core does not assume that the target is the primary display or that output zero corresponds to the desired screen. Rendering contexts are associated with the actual `dwm` output object.
 
 ---
 
 ## Demonstration and tested configurations
 
-- ### Windows 10 22H2 - real machine, NVIDIA
+### Windows 10 22H2 — real machine, NVIDIA
 
 ![Windows 10 22H2, build 19045.6466, real NVIDIA system](.screenshots/win10-22h2-19045-6466-real.png)
 
-- ### Windows 11 25H2 - real machine, NVIDIA
+### Windows 11 25H2 — real machine, NVIDIA
 
 ![Windows 11 25H2, build 26200.8037, real NVIDIA system](.screenshots/win11-25h2-26200-8037-real.png)
 
-- ### Windows 11 25H2 - VMware virtual machine
+### Windows 11 25H2 — VMware virtual machine
 
 ![Windows 11 25H2, build 26200.8655, VMware virtual machine](.screenshots/win11-25h2-26200-8655-virtual.png)
 
 ### Tested configurations
 
 | Environment | Build | Observed DWM implementation | Resource access |
-|---|---:|---|---|
+| --- | ---: | --- | --- |
 | Windows 10 22H2, real NVIDIA system | 19045.6466 | `CLegacyRenderTarget` / `CLegacySwapChain` | legacy DXGI chain |
 | Windows 11 25H2, VMware | 26200.8655 | legacy-style path similar to Windows 10 | modern internal buffer path and legacy fallback both work |
 | Windows 11 25H2, real NVIDIA system | 26200.8037 | `CDDisplayRenderTarget` / `CDDisplaySwapChain` | internal physical back buffer → D3D11 resource |
 
-These names describe the configurations observed during research. The selected path is not determined only by the Windows version. GPU vendor, display driver, virtualization, and the compositor environment can cause the same Windows build to instantiate a different implementation.
+These names describe the configurations observed during research. The selected path is not determined solely by the Windows version. GPU vendor, display driver, virtualization, and the compositor environment can cause the same Windows build to instantiate a different implementation.
 
 ---
 
 ## Usage, API, integration model
 
-The `release` core is intended to be statically linked into code that will execute inside `dwm.exe`. Rendering is framework-independent and callback-based.
+The Release core is intended to be statically linked into code that executes inside `dwm.exe`. Rendering is framework-independent and callback-based.
 
 ### Context model
 
@@ -162,7 +158,7 @@ const auto status = wdwmo::initialize(
     on_terminate);
 ```
 
-The `guard` and `termination callback` are optional. Without a guard, the core can still install and use the hook, but it cannot coordinate replacement by a later mapped copy through shared storage.
+The guard and termination callback are optional. Without a guard, the core can still install and use the hook, but it cannot coordinate replacement by a later mapped copy through shared storage.
 
 ### Dumper usage
 
@@ -187,7 +183,7 @@ The matching PDB URL can be generated from a PE's RSDS record:
 
 ```cpp
 std::string url;
-wdwmcd::get_micrsofot_server_pdb_url(image, image_size, url);
+wdwmcd::get_microsoft_server_pdb_url(image, image_size, url);
 ```
 
 Downloading and caching the PDB is left to the operator. The sample loader performs the download through its own networking layer.
@@ -201,42 +197,45 @@ Downloading and caching the PDB is left to the operator. The sample loader perfo
 - [ ] Update monitor rectangles, VidPn IDs, names, and DPI after configuration changes.
 - [ ] Test Intel, AMD, hybrid-GPU, multi-adapter, HDR, rotation, and additional multi-monitor configurations.
 - [ ] Derive or validate the `COverlayContext::Present` ABI from richer PDB/type information instead of only the build family.
-- [ ] Expand verified `Windows` build coverage.
+- [ ] Expand verified Windows build coverage.
 
 ### Dumper
 
-- [ ] Full code review, refactor, cleanup.
+- [ ] Perform a full code review, refactoring, and cleanup.
 
-### Another
-- [ ] Add missing dependencies like **ncore**.
+### Other
+
+- [ ] Add missing dependencies such as **ncore**.
 
 ---
 
-# Explanation
+## Explanation
 
-## Related works and its limitations
+### Related projects and their limitations
 
 The project was developed after studying existing public DWM overlay implementations and the limitations of path-specific approaches:
 
 - [aurenex/dwm-overlay](https://github.com/aurenex/dwm-overlay)
-  - doesn't works on `Windows 11 24H2+` with `NVidia` drivers.
-  - doesn't supports displays configuration changes.
+  - does not work on Windows 11 24H2+ with NVIDIA drivers.
+  - does not support display-configuration changes.
 
 - [chaosium43/dwm-overlay](https://github.com/chaosium43/dwm-overlay)
-  - works only on `Windows 11`.
-  - supports only primary monitor.
-  - manipulates internal states of `dwm`.
+  - works only on Windows 11.
+  - supports only the primary monitor.
+  - manipulates DWM's internal state.
   - has many offset dependencies that are difficult to maintain.
-  - dumper requires external `dbghelp` modules and cached on disk analyzing `.pdb`.
+  - its dumper requires external DbgHelp modules and analyzes PDB files cached on disk.
 
-So, I conducted a little research into `dwm` internals to solve these issues.
+I therefore conducted research into DWM internals to address these issues.
 
 ---
 
-## How the `dwm.exe` render works
-`dwm` uses different rendering paths depending on the OS version (and different paths are possible even within the same version), here is how it works in the tested environments:
+### How DWM rendering works
 
-`Windows 10 22H2 19045.6466`:
+DWM uses different rendering paths depending on the OS version, and different paths are possible even within the same version. The following shows how rendering works in the tested environments:
+
+**Windows 10 22H2, build 19045.6466:**
+
 ```text
 -3.	CComposition::Present
 		CComposition *this				//rcx 1f87ae28960
@@ -300,11 +299,11 @@ So, I conducted a little research into `dwm` internals to solve these issues.
 		CDXGISwapChain *this			//rcx 1f87ea3a5d8	[CDXGISwapChainDWMLegacy+0x40]+0x58
 ```
 
-I ran through practically the entire present path on `Windows 10` with MPO enabled (since it takes precedence). Here, you can clearly see where the `aurenex/dwm-overlay` hook is placed, and it also becomes apparent why this approach causes all the main issues.
+I traced practically the entire present path on Windows 10 with MPO enabled, since it takes precedence. This clearly shows where the `aurenex/dwm-overlay` hook is placed and why this approach causes the main issues.
 
-Windows 11 uses the same route on every build, but why is it doesn't work only on `24H2+` with NVidia drivers?
-Because NVidia forces `dwm` to use `CDDisplayRenderTarget` instead of `CLegacyRenderTarget`.
-And we can see selector in `dwmcore.dll` inside `CRenderTargetManager::RenderAndPresent` function:
+Windows 11 uses the same route on every build, but why does it fail only on 24H2+ with NVIDIA drivers?
+This is because NVIDIA forces DWM to use `CDDisplayRenderTarget` instead of `CLegacyRenderTarget`.
+The selector can be seen in `dwmcore.dll`, inside the `CRenderTargetManager::RenderAndPresent` function:
 
 ```cpp
 CRenderTargetManager::SortMonitorTargets((CRenderTargetManager *)this, (__int64)&sortedMonitorTargetsVec);
@@ -342,7 +341,7 @@ detail::vector_facade<CRenderTargetManager::CSortedMonitorTarget,detail::buffer_
 	~vector_facade<CRenderTargetManager::CSortedMonitorTarget,detail::buffer_impl<CRenderTargetManager::CSortedMonitorTarget,4,1,detail::liberal_expansion_policy>>(&sortedMonitorTargetsVec);
 ```
 
-So, I decided to use `COverlayContext::Present` like `chaosium43/dwm-overlay` because it used in both scenarious on both `Windows` builds and it's the most top-level easy maintain function i can see:
+I decided to use `COverlayContext::Present`, as `chaosium43/dwm-overlay` does, because it is used in both scenarios on both Windows versions and is the highest-level, easiest-to-maintain function I could find:
 
 ```text
 CLegacyRenderTarget::Present / RenderAndPresent
@@ -358,50 +357,52 @@ CDDisplayRenderTarget::Present / RenderAndPresent
 
 ---
 
-## What do we need
+### What we need
 
-In the context of hooking DWM, we need to obtain the render context to draw our own content, this requires four things:
+To draw our own content when hooking DWM, we need to obtain the rendering context. This requires four objects:
 
 - `ID3D11Device`
 - `ID3D11DeviceContext`
 - `ID3D11Texture2D`
 - `ID3D11RenderTargetView`
 
-Every `dwm` overlay project obtains this necessary information from various sources in its own way. For example, `aurenex/dwm-overlay` retrieves the device and texture from the `IDXGISwapChain`, whereas `chaosium43/dwm-overlay` gets them from internal `dwm` structures - accessing the first via an offset and the second by calling a virtual function.
+Every DWM overlay project obtains this information from different sources in its own way. For example, `aurenex/dwm-overlay` retrieves the device and texture from the `IDXGISwapChain`, whereas `chaosium43/dwm-overlay` obtains them from internal DWM structures—accessing the first through an offset and the second by calling a virtual function.
 
-Experimental testing in my environments has shown that both methods can be streamlined by obtaining just one key element - the `ID3D11Resource`, from which all the other components can be derived, thereby minimizing dependencies.
+Experimental testing in my environments showed that both methods can be streamlined by obtaining a single key object—the `ID3D11Resource`—from which all the other components can be derived, thereby minimizing dependencies.
 
-At first I looked up for direct getters and found only this:
+At first, I looked for direct getters and found only these:
 
 ```text
 180064000 CLegacySwapChainBuffer::GetD3D11Resource(void)
 180200800 CDDisplaySwapChainBuffer::GetD3D11Resource(void)
 ```
 
-But what is a `SwapChainBuffer` are? So, as i can see, this is something of internal `dwm` wrapper around some other things, anyway, we need to somehow get this object instance. And for lucky us, there is another direct getter now in our `IOverlaySwapChain` that we gets in `COverlayContext::Present` as second parameter: 
+But what exactly is a `SwapChainBuffer`? As far as I can tell, it is an internal DWM wrapper around other objects. In any case, we need to obtain an instance of it. Fortunately, another direct getter is available on the `IOverlaySwapChain` received as the second parameter of `COverlayContext::Present`:
 
 ```text
 180063E70 CLegacySwapChain::GetPhysicalBackBuffer(void)
 1801EEA40 CDDisplaySwapChain::GetPhysicalBackBuffer(void)
 ```
 
-so, all we need it's to get these two vftable offsets, which must be the same in one environment and then just do:
+all we need is to obtain these two vftable offsets, which must be the same within one environment, and then call:
 
 ```cpp
 IOverlaySwapChain->GetPhysicalBackBuffer()->GetD3D11Resource();
 ```
 
-Okay, it's clear enough for `Windows 11`, but `Windows 10` lacks those methods and functions - there are no direct resource getters, no intermediate objects, nothing. However, I noticed that the rendering path does utilize `DXGISwapChain` - specifically within `CLegacySwapChain::PresentMPO`, and on `Windows 10`, the legacy path is used regardless of whether it's an Nvidia GPU or not, so, we can simply extract the `DXGISwapChain` just as `dwm` does.
+This is straightforward on Windows 11, but Windows 10 lacks these methods and functions: there are no direct resource getters or intermediate objects. However, the rendering path does use `DXGISwapChain`, specifically within `CLegacySwapChain::PresentMPO`. On Windows 10, the legacy path is used regardless of whether an NVIDIA GPU is present, so we can extract the `DXGISwapChain` just as DWM does.
 
-And there is we split our present path to two:
+This is where the present path splits into two variants:
+
 - Legacy present path
-  - works through IDXGISwapChainDWM
+  - Works through `IDXGISwapChainDWM`.
 - Modern present path
-  - works through IOverlaySwapChainBuffer
+  - Works through `IOverlaySwapChainBuffer`.
 
-also, we need two `COverlayContext::Present` ABIs, for `Windows 10` and `Windows 11`, because they're little different:
+We also need two `COverlayContext::Present` ABIs for Windows 10 and Windows 11 because they differ slightly:
 
-`Windows 10 22H2:`
+**Windows 10 22H2:**
+
 ```cpp
 HRESULT __fastcall COverlayContext::Present(
     COverlayContext* this,
@@ -412,7 +413,8 @@ HRESULT __fastcall COverlayContext::Present(
     bool legacy_present);
 ```
 
-`Windows 11 25H2:`
+**Windows 11 25H2:**
+
 ```cpp
 HRESULT __fastcall COverlayContext::Present(
     COverlayContext* this,
@@ -424,73 +426,76 @@ HRESULT __fastcall COverlayContext::Present(
     bool legacy_present);
 ```
 
-Okay, at this stage we can already build an experimental version capable of rendering something, but for a proper targeted overlay, we also need additional information - at least, the desktop rectangle. Given the data we have so far, this is simply impossible if we need to account for all screen modes include **duplicate** and **extend**.
+At this stage, we can already build an experimental version capable of rendering something. However, a properly targeted overlay also requires additional information—at minimum, the desktop rectangle. With the data obtained so far, this is impossible if we need to account for all display modes, including **duplicate** and **extend**.
 
-We can't simply map all of this together because there is no direct dependency chain from `device` / `device_context` / `resource` / `render_target_view` to `dxgi_output`, and heuristic mappings are essentially guesswork with varying degrees of success.
+We cannot simply map these objects together because there is no direct dependency chain from `device` / `device_context` / `resource` / `render_target_view` to `dxgi_output`, and heuristic mappings are essentially guesswork with varying degrees of success.
 
-Here we need at least two things: the source path VidPN ID and the target path VidPN ID. I won't go into the details of how `QueryDisplayConfig` works on `Windows`, but to reliably obtain the necessary information, we need both of these IDs regardless. Of course, it is possible to get by with just one - the target VidPN ID, especially since `Windows 11` `dwmcore` has:
+Here, we need at least two values: the source-path VidPn ID and the target-path VidPn ID. I will not go into the details of how `QueryDisplayConfig` works on Windows, but both IDs are required to obtain the necessary information reliably. It is, of course, possible to manage with only one—the target VidPn ID—especially because the Windows 11 version of `dwmcore` has:
 
 ```text
 1801ED7E0 CLegacySwapChain::GetVidPnTargetId(void)
 1802BF4D0 COverlaySwapChain::GetVidPnTargetId(void)
 ```
 
-However, `Windows 10` unfortunately has only:
+Windows 10, however, has only:
 
 ```text
 1800E2510 CDDisplaySwapChain::GetVidPnSourceId(void)
 1800E3798 CLegacySwapChain::GetVidPnSourceId(void)
 ```
 
-So, a simple cross-platform solution wasn't immediately apparent, but I did examine the structures at runtime.
+A simple cross-version solution was therefore not immediately apparent, so I examined the structures at runtime.
 
-### Runtime research
+#### Runtime research
+
 ![Runtime research](.screenshots/wdwmo-dxgioutput-dynamic.png)
 
-1. `COverlayContext*` for both monitors, get from `rcx` at `COverlayContext::Present` call.
-2. Its `C...RenderTarget*`, expectedly stored at `0x0`.
-3. `const ATL::CComObject<class CDXGIOutput>::``vftable'{for ``IDXGIOutputDWM'}`, also expectedly stored at `0x0` in this structure.
-4. Output's GDI Display name.
-5. Output's source VidPN ID.
-6. Output's target VidPN ID.
+1. `COverlayContext*` instances for both monitors, obtained from `RCX` when `COverlayContext::Present` is called.
+2. Their `C...RenderTarget*` objects, as expected, stored at offset `0x0`.
+3. ``const ATL::CComObject<class CDXGIOutput>::`vftable'{for `IDXGIOutputDWM'}``, also stored at offset `0x0` in this structure, as expected.
+4. The output's GDI display name.
+5. The output's source VidPn ID.
+6. The output's target VidPn ID.
 
-And it turns out all the necessary information is right here.
+It turns out that all the necessary information is available here.
 
-I tried to see what reads these addresses - containing the target/source VidPN ID, but on `Windows 10`, nothing seems to need them at all, at least not when cycling through configurations like `duplicate` -> `extend` -> `duplicate`. So, I decided to examine the object's vftable, and I found something interesting there.
+I tried to determine what reads the addresses containing the target/source VidPn IDs, but on Windows 10, nothing appears to use them, at least when cycling through configurations such as `duplicate` → `extend` → `duplicate`. I examined the object's vftable and found something interesting.
 
 ![DXGIOutputDWM VFTable](.screenshots/wdwmo-dxgioutput-vftable.png)
 
-The `GetDesc` function, returning `DXGI_OUTPUT_DWM_DESC`. Since `dxgi.pdb` doesn't provides this structure layout I needed to know it manually, so, i've just traced calls of this function.
+The `GetDesc` function returns `DXGI_OUTPUT_DWM_DESC`. Because `dxgi.pdb` does not provide this structure layout, I had to determine it manually by tracing calls to the function.
 
-### Before executing `GetDesc` function:
+#### Before executing `GetDesc`
+
 ![DXGIOutputDWM GetDesc result trace, before](.screenshots/wdwmo-dxgioutput-getdesc-caller.png)
 
-1. Calling of `GetDesc`.
-2. 1st argument, e.g. `DXGIOutputDWM*` (`this`).
-3. 2nd argument, e.g. `DXGI_OUTPUT_DWM_DESC*` (`result`). Perfectly matches with caller code - `lea rdx, [rdi+20]`. Points to stack.
+1. A call to `GetDesc`.
+2. The first argument, i.e. `DXGIOutputDWM*` (`this`).
+3. The second argument, i.e. `DXGI_OUTPUT_DWM_DESC*` (`result`). This matches the caller code perfectly: `lea rdx, [rdi+20]`. It points to the stack.
 
-Because `rdx` is a stack pointer, I just viewed stack.
+Because `RDX` points to the stack, I simply inspected the stack.
 
-### Right after `GetDesc` execution:
+#### Immediately after executing `GetDesc`
+
 ![DXGIOutputDWM GetDesc result trace, after](.screenshots/wdwmo-dxgioutput-getdesc-after.png)
 
-1. Function at where is tracing now.
-2. Changed values at stack.
+1. The function at which tracing is currently paused.
+2. Values changed on the stack.
 
-It is clearly evident that this function - `GetDesc` returns all the information we need. So, only a few small steps remain: obtain its address, call it, and extract the required values from the result.
+It is clear that `GetDesc` returns all the information we need. Only a few small steps remain: obtain its address, call it, and extract the required values from the result.
 
-Later I re-verified this using a slightly different approach - allocating a buffer of N length and filling it with garbage values to see exactly what changed, thereby allowing for a more accurate mapping of the layout.
+Later, I verified this again using a slightly different approach: allocating a buffer of length N and filling it with garbage values to see exactly what changed, allowing the layout to be mapped more accurately.
 
-It is also clearly visible that this object inherits from `IUnknown`, therefore, instead of determining the offsets by analyzing the `PDB`, we can simply declare it - along with `DXGI_OUTPUT_DWM_DESC`.
+It is also clear that this object inherits from `IUnknown`. And, instead of determining its offsets by analyzing the PDB, we can simply declare the interface together with `DXGI_OUTPUT_DWM_DESC`.
 
-The only difference in both OS lies in the `DXGI_OUTPUT_DWM_DESC` structure, but that can be accounted for as well.
+The only difference between the two OS versions lies in the `DXGI_OUTPUT_DWM_DESC` structure, and that can be accounted for as well.
 
-And, we need correctly defined `IDXGIOutputDWM`, including its guid.
-To obtain its guid, I had to take a quick look at the `QueryInterface` implementation in that vftable, locate the associated ATL COM map, and find the required entry.
+We also need a correctly defined `IDXGIOutputDWM`, including its GUID.
+To obtain its GUID, I examined the `QueryInterface` implementation in that vftable, located the associated ATL COM map, and found the required entry.
 
-## Restored DXGI undocumented internals
+### Restored undocumented DXGI internals
 
-Of course, these aren't exact replicas of `dwm's` valid internal structures, but they are accurate for each of the specified environments; to use them, all that was needed was to tinker a bit with the union and declare them correctly.
+These are not exact replicas of DWM's actual internal structures, but they are accurate for each specified environment. Using them only required adjusting the union and declaring the structures correctly.
 
 ```cpp
 //win10 22h2 19045 / win11 25h2 26200; 0x24
@@ -579,7 +584,7 @@ typedef union _DXGI_OUTPUT_DWM_DESC {
 }DXGI_OUTPUT_DWM_DESC;
 ```
 
-And of course restored `IDXGIOutputDWM` with its guid and necessary methods:
+The restored `IDXGIOutputDWM`, including its GUID and required methods, is defined as follows:
 
 ```cpp
 MIDL_INTERFACE("6f66a9a0-bece-4ee8-b11b-990eb38ed976")
@@ -592,7 +597,7 @@ IDXGIOutputDWM : public IUnknown{
 };
 ```
 
-Also, we need corretcly defined `IDXGISwapChainDWM`, that was getted from `aurenex/dwm-overlay` repository.
+We also need a correctly defined `IDXGISwapChainDWM`, taken from the `aurenex/dwm-overlay` repository.
 
 ```cpp
 MIDL_INTERFACE("f69f223b-45d3-4aa0-98c8-c40c2b231029")
@@ -612,55 +617,55 @@ IDXGISwapChainDWMLegacy : public IDXGIDeviceSubObject{
 
 ---
 
-## Project dependencies
+### Project dependencies
 
-Now that we have sorted out the complete set of what exactly we need for the job, we can consider how to obtain it. Naturally, each item requires its own offset - some are found in various structures, others in files, and some in virtual function tables and here they all are:
+Now that we have established the complete set of items required for the task, we can consider how to obtain each one. Naturally, each item requires its own offset: some are found in structures, others in files, and others in virtual function tables. They are listed below:
 
 | Name | Type | Kind | Target |
 | --- | --- | --- | --- |
 | `present` | rva | static | `COverlayContext::Present` |
-| `render_target` | struct | static | `COverlayContext` -> `C...RenderTarget` |
-| `dxgi_output_vftable` | rva | static | `const ATL::CComObject<class CDXGIOutput>::``vftable'{for ``IDXGIOutputDWM'}` |
-| `dxgi_output` | struct | runtime | `C...RenderTarget` -> `IDXGIOutputDWM` |
-| `dxgi_swap_chain` | struct | static | `IOverlaySwapChain` -> `IDXGISwapChainDWM` |
-| `get_physical_back_buffer` | vftable | static | `IOverlaySwapChain::VFTable` -> `GetPhysicalBackBuffer` |
-| `get_d3d11_resource` | vftable | static | `ISwapChainBuffer::VFTable` -> `GetD3D11Resource` |
+| `render_target` | structure | static | `COverlayContext` → `C...RenderTarget` |
+| `dxgi_output_vftable` | rva | static | ``const ATL::CComObject<class CDXGIOutput>::`vftable'{for `IDXGIOutputDWM'}`` |
+| `dxgi_output` | structure | runtime | `C...RenderTarget` → `IDXGIOutputDWM` |
+| `dxgi_swap_chain` | structure | static | `IOverlaySwapChain` → `IDXGISwapChainDWM` |
+| `get_physical_back_buffer` | vftable | static | `IOverlaySwapChain::VFTable` → `GetPhysicalBackBuffer` |
+| `get_d3d11_resource` | vftable | static | `ISwapChainBuffer::VFTable` → `GetD3D11Resource` |
 
-and their purpose:
+Their purposes are:
 
-- `present` - `dwmcore.dll` rva offset to main hook target.
+- `present` — the RVA in `dwmcore.dll` of the main hook target.
 
-- `render_target` - offset from `COverlayContext` instance to `CLegacy-/CDDisplay-RenderTarget`, we need this to correctly identify the physical output monitor - specifically its logical rect, VidPN ID, friendly name and GDI name.
+- `render_target` — the offset from a `COverlayContext` instance to `CLegacy-/CDDisplay-RenderTarget`. This is required to identify the physical output monitor correctly, specifically its logical rectangle, VidPn ID, friendly name, and GDI name.
 
-- `dxgi_output_vftable` - `dxgi.dll` rva offset to vftable - which is located at the beginning of the DXGIOutputDWM object, is needed to determine which object is the one.
+- `dxgi_output_vftable` — the RVA in `dxgi.dll` of the vftable located at the beginning of the `DXGIOutputDWM` object. It is used to identify the correct object.
 
-- `dxgi_output` - offset from `CLegacy-/CDDisplay-RenderTarget` to field containing `IDXGIOutputDWM*`. It is harder to determine it statically than to obtain it at runtime.
+- `dxgi_output` — the offset from `CLegacy-/CDDisplay-RenderTarget` to the field containing `IDXGIOutputDWM*`. It is more difficult to determine statically than to obtain at runtime.
 
-- `dxgi_swap_chain` - offset from `IOverlaySwapChain` to field containing `IDXGISwapChainDWM`, so we can easily work with it in legacy present path configurations.
+- `dxgi_swap_chain` — the offset from `IOverlaySwapChain` to the field containing `IDXGISwapChainDWM`, allowing it to be used in legacy present-path configurations.
 
-- `get_physical_back_buffer` - `IOverlaySwapChain` vftable offset to matching function for retrieving nextly `ID3D11Resource`.
+- `get_physical_back_buffer` — the `IOverlaySwapChain` vftable offset of the corresponding function used to retrieve the object from which `ID3D11Resource` is obtained.
 
-- `get_d3d11_resource` - `IOverlaySwapChainBuffer` vftable offset to matching function for retrieving `ID3D11Resource`.
+- `get_d3d11_resource` — the `IOverlaySwapChainBuffer` vftable offset of the corresponding function used to retrieve `ID3D11Resource`.
 
-And all of this can be determined automatically via static analysis.
+All of this can be determined automatically through static analysis.
 
 ---
 
-## Project architecture
+### Project architecture
 
-The project is designed as a static link library - with a core you won't need to modify often - intended for use via callbacks.
+The project is designed as a statically linked, callback-based library whose core should rarely need modification.
 
 The project consists of three parts:
 
-- `wdwmo` (`Windows DWM Overlay`): The project core - a module loaded directly into `dwm.exe`. The `debug` build includes a sample implementation featuring an **ImGui** window that displays primary information.
+- `wdwmo` (`Windows DWM Overlay`): the project core—a module loaded directly into `dwm.exe`. The Debug build includes a sample implementation featuring an **ImGui** window that displays basic information.
 
-- `wdwmcd` (`Windows DWM Core Dumper`): A module responsible for automatically retrieving all necessary offsets and analyzing `dwmcore.dll` and `dxgi.dll` using `pdb` files.
+- `wdwmcd` (`Windows DWM Core Dumper`): a module responsible for automatically retrieving all required offsets and analyzing `dwmcore.dll` and `dxgi.dll` using PDB files.
 
-- `wdwmosl` (`Windows DWM Overlay Sample Loader`): A sample loader project; it retrieves offsets from system libraries or those specified by the user and loads either a custom or standard debug `wdwmo` build into `dwm.exe`.
+- `wdwmosl` (`Windows DWM Overlay Sample Loader`): a sample loader project. It retrieves offsets from system libraries or libraries specified by the user and loads either a custom or the standard Debug `wdwmo` build into `dwm.exe`.
 
-All three components have dependencies, some of which are missing - specifically `ncore`, which I do not plan to include in the project at this stage. If you need to build the project, you will have to replace all instances of `ncore` with your own equivalents. This is not difficult, as there are few such instances, but keep in mind that `ncore::disassembly` is a wrapper around **BeaEngine**.
+All three components have dependencies, one of which is missing: `ncore`, which I do not plan to include in the project at this stage. To build the project, you must replace all uses of `ncore` with your own equivalents. There are few such uses, so this is not difficult; however, keep in mind that `ncore::disassembly` is a wrapper around **BeaEngine**.
 
-### Toolchain
+#### Toolchain
 
 - `Windows x64`.
 - `Visual Studio` / `MSVC`.
@@ -669,10 +674,10 @@ All three components have dependencies, some of which are missing - specifically
 
 The reverse-engineering logic and wrapper ABI are x64-specific.
 
-### Included/external components
+#### Included/external components
 
 | Component | Used by | Repository form | License |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | MinHook | `wdwmo` | header and static library | BSD 2-Clause-style notices, including HDE32/HDE64 |
 | Direct3D 11 / DXGI and Windows APIs | `wdwmo` and sample | Windows SDK/system components | Microsoft terms |
 | raw_pdb | `wdwmcd` | bundled source | BSD 2-Clause |
@@ -683,15 +688,15 @@ The reverse-engineering logic and wrapper ABI are x64-specific.
 | zlib 1.2.13 | libcurl compression support | bundled static library | zlib license |
 | ncore | project utilities | private author-owned utilities | stated separately when distributed |
 
-### No DIA SDK or DbgHelp requirement
+#### No DIA SDK or DbgHelp requirement
 
-Unlike implementations that delegate symbol handling to **DIA SDK** or **DbgHelp**, `wdwmcd` parses the supplied PDB data directly through **raw_pdb**. The core/dumper design therefore does not require a separately installed DIA runtime or a DbgHelp-based symbol session.
+Unlike implementations that delegate symbol handling to the **DIA SDK** or **DbgHelp**, `wdwmcd` parses the supplied PDB data directly through **raw_pdb**. The core/dumper design therefore does not require a separately installed DIA runtime or a DbgHelp-based symbol session.
 
-The project still uses normal `Windows` system libraries and statically linked helper libraries where appropriate; "no dynamic dependencies" here means no additional external symbol-engine DLL requirement.
+The project still uses standard Windows system libraries and statically linked helper libraries where appropriate. Here, "no dynamic dependencies" means that no additional external symbol-engine DLL is required.
 
 ---
 
-## Multiple initialization
+### Multiple initialization
 
 Repeated manual mapping or loading of a new implementation into `dwm.exe` must not blindly install another hook over an existing trampoline.
 
@@ -720,9 +725,9 @@ The mechanism is intentionally operator-managed because the storage location and
 
 ---
 
-## Licensing
+### Licensing
 
-The original project code is released under the [MIT License](.license.txt):
+The original project code is released under the [MIT License](license.txt):
 
 ```text
 Copyright (c) 2026 nepoladka
@@ -735,7 +740,7 @@ notices. The authoritative component list and complete notices are provided in
 directory.
 
 | Component | License |
-|---|---|
+| --- | --- |
 | Dear ImGui | MIT |
 | raw_pdb | BSD 2-Clause |
 | MinHook and bundled HDE portions | BSD 2-Clause-style notices |

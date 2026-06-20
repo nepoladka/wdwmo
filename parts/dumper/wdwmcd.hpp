@@ -53,7 +53,7 @@ namespace wdwmcd {
         std::string& _pdb_name) noexcept;
 
     //https:// msdl.microsoft.com /download/symbols/ pdb_name / guid_age / pdb_name
-    status_t get_micrsofot_server_pdb_url(
+    status_t get_microsoft_server_pdb_url(
         const void* dll_file_data,
         size_t dll_file_size,
         std::string& _result) noexcept;

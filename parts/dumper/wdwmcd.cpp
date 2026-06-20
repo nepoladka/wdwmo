@@ -1119,7 +1119,7 @@ namespace wdwmcd {
         return status_t::success;
     }
 
-    status_t get_micrsofot_server_pdb_url(
+    status_t get_microsoft_server_pdb_url(
         const void* dll_file_data,
         size_t dll_file_size,
         std::string& _result) noexcept {

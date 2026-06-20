@@ -47,7 +47,7 @@ wdwmcd::status_t get_configuration(std::string dwmcore_path, std::string dxgi_pa
 
 	{
 		auto pdb_url = std::string();
-		if (auto status = wdwmcd::get_micrsofot_server_pdb_url(dwmcore_file.data(), dwmcore_file.size(), pdb_url)) {
+		if (auto status = wdwmcd::get_microsoft_server_pdb_url(dwmcore_file.data(), dwmcore_file.size(), pdb_url)) {
 			conlog("[l] file doesn't contains right pdb info, status: %d\n", status);
 
 			return status;
@@ -67,7 +67,7 @@ wdwmcd::status_t get_configuration(std::string dwmcore_path, std::string dxgi_pa
 
 	{
 		auto pdb_url = std::string();
-		if (auto status = wdwmcd::get_micrsofot_server_pdb_url(dxgi_file.data(), dxgi_file.size(), pdb_url)) {
+		if (auto status = wdwmcd::get_microsoft_server_pdb_url(dxgi_file.data(), dxgi_file.size(), pdb_url)) {
 			conlog("[l] file doesn't contains right pdb info, status: %d\n", status);
 
 			return status;
