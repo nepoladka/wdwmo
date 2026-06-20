@@ -4,10 +4,9 @@
 
 `wdwmo` is an educational and portfolio-oriented project that renders directly into the Desktop Window Manager composition pipeline. Instead of creating a transparent top-level window, the overlay code runs inside `dwm.exe`, intercepts an internal DWM present call, obtains the Direct3D 11 render target used for a particular display, and delegates initialization and drawing to user-provided callbacks.
 
-```text
 > [!WARNING]
 > The project is intended for research involving reverse engineering and controlled experiments. It implements a concept rather than serving as a finished product. We are not liable for consequences resulting from the use of this project for purposes other than those intended.
-```
+
 
 ## Contents
 
