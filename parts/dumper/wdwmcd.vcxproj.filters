@@ -1,0 +1,79 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <ClCompile Include="wdwmcd.cpp" />
+    <ClCompile Include="..\..\shared\includes\sources\raw_pdb\PDB.cpp">
+      <Filter>includes\raw_pdb</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\shared\includes\sources\raw_pdb\PDB_CoalescedMSFStream.cpp">
+      <Filter>includes\raw_pdb</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\shared\includes\sources\raw_pdb\PDB_DBIStream.cpp">
+      <Filter>includes\raw_pdb</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\shared\includes\sources\raw_pdb\PDB_DBITypes.cpp">
+      <Filter>includes\raw_pdb</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\shared\includes\sources\raw_pdb\PDB_DirectMSFStream.cpp">
+      <Filter>includes\raw_pdb</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\shared\includes\sources\raw_pdb\PDB_GlobalSymbolStream.cpp">
+      <Filter>includes\raw_pdb</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\shared\includes\sources\raw_pdb\PDB_ImageSectionStream.cpp">
+      <Filter>includes\raw_pdb</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\shared\includes\sources\raw_pdb\PDB_InfoStream.cpp">
+      <Filter>includes\raw_pdb</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\shared\includes\sources\raw_pdb\PDB_IPIStream.cpp">
+      <Filter>includes\raw_pdb</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\shared\includes\sources\raw_pdb\PDB_ModuleInfoStream.cpp">
+      <Filter>includes\raw_pdb</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\shared\includes\sources\raw_pdb\PDB_ModuleLineStream.cpp">
+      <Filter>includes\raw_pdb</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\shared\includes\sources\raw_pdb\PDB_ModuleSymbolStream.cpp">
+      <Filter>includes\raw_pdb</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\shared\includes\sources\raw_pdb\PDB_NamesStream.cpp">
+      <Filter>includes\raw_pdb</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\shared\includes\sources\raw_pdb\PDB_PCH.cpp">
+      <Filter>includes\raw_pdb</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\shared\includes\sources\raw_pdb\PDB_PublicSymbolStream.cpp">
+      <Filter>includes\raw_pdb</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\shared\includes\sources\raw_pdb\PDB_RawFile.cpp">
+      <Filter>includes\raw_pdb</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\shared\includes\sources\raw_pdb\PDB_SectionContributionStream.cpp">
+      <Filter>includes\raw_pdb</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\shared\includes\sources\raw_pdb\PDB_SourceFileStream.cpp">
+      <Filter>includes\raw_pdb</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\shared\includes\sources\raw_pdb\PDB_TPIStream.cpp">
+      <Filter>includes\raw_pdb</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\shared\includes\sources\raw_pdb\PDB_Types.cpp">
+      <Filter>includes\raw_pdb</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="wdwmcd.hpp" />
+    <ClInclude Include="..\configuration.hpp" />
+    <ClInclude Include="..\types.hpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="includes">
+      <UniqueIdentifier>{92eb90d7-f419-4147-8a89-57b53634997d}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="includes\raw_pdb">
+      <UniqueIdentifier>{dc92f86d-19ca-4562-9c04-ba93c7af835c}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>

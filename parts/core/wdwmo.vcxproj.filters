@@ -1,0 +1,42 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <ClInclude Include="wdwmo.hpp" />
+    <ClInclude Include="..\..\shared\includes\sources\imgui\imconfig.h">
+      <Filter>includes\imgui</Filter>
+    </ClInclude>
+    <ClInclude Include="..\types.hpp" />
+    <ClInclude Include="dxgiu.hpp" />
+    <ClInclude Include="..\configuration.hpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="main.cpp" />
+    <ClCompile Include="wdwmo.cpp" />
+    <ClCompile Include="..\..\shared\includes\sources\imgui\imgui.cpp">
+      <Filter>includes\imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\shared\includes\sources\imgui\backends\imgui_impl_dx11.cpp">
+      <Filter>includes\imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\shared\includes\sources\imgui\backends\imgui_impl_win32.cpp">
+      <Filter>includes\imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\shared\includes\sources\imgui\imgui_draw.cpp">
+      <Filter>includes\imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\shared\includes\sources\imgui\imgui_tables.cpp">
+      <Filter>includes\imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\shared\includes\sources\imgui\imgui_widgets.cpp">
+      <Filter>includes\imgui</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="includes">
+      <UniqueIdentifier>{66b2a740-fa2a-4d8a-b840-c0be561fc3d5}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="includes\imgui">
+      <UniqueIdentifier>{c50b9c8e-a5e4-4cd6-987c-64e0366c2e09}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>
