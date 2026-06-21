@@ -16,9 +16,16 @@
 - [Explanation](#explanation)
   - [Related projects and their limitations](#related-projects-and-their-limitations)
   - [How DWM rendering works](#how-dwm-rendering-works)
-  - [What we need](#what-we-need)
+  - [What do we need?](#what-do-we-need)
   - [Restored undocumented DXGI internals](#restored-undocumented-dxgi-internals)
   - [Project dependencies](#project-dependencies)
+  - [Offsets determination](#offsets-determination)
+    - [offsets.present](#offsetspresent)
+	- [offsets.render_target](#offsetsrender_target)
+	- [offsets.dxgi_output_vftable](#offsetsdxgi_output_vftable)
+	- [offsets.dxgi_output](#offsetsdxgi_output)
+	- [offsets.dxgi_swap_chain](#offsetsdxgi_swap_chain)
+	- [offsets.get_physical_back_buffer and offsets.get_d3d11_resource](#offsetsget_physical_back_buffer-and-offsetsget_d3d11_resource)
   - [Project architecture](#project-architecture)
   - [Multiple initialization](#multiple-initialization-1)
   - [Licensing](#licensing)
@@ -357,7 +364,7 @@ CDDisplayRenderTarget::Present / RenderAndPresent
 
 ---
 
-### What we need
+### What do we need?
 
 To draw our own content when hooking DWM, we need to obtain the rendering context. This requires four objects:
 
@@ -648,6 +655,186 @@ Their purposes are:
 - `get_d3d11_resource` — the `IOverlaySwapChainBuffer` vftable offset of the corresponding function used to retrieve `ID3D11Resource`.
 
 All of this can be determined automatically through static analysis.
+
+---
+
+### Offsets determination
+
+Obtaining offsets is automated (wdwmcd), but below I will describe how exactly offsets are found, and how you can do it manually using IDA or something else.
+
+#### `offsets.present`:
+
+Nothing complicated, just RVA for the "`COverlayContext::Present`" symbol, you can also find them manually using IDA.
+
+---
+
+#### `offsets.render_target`:
+
+This is a bit more complicated, since we're talking about an offset into a structure whose layout isn't specified in the PDB file. We need to track down where and how this object is used. This isn't a difficult task; simply search IDA for the keywords "`RenderTarget`", "`MonitorTarget`", and other renames of these classes. In both Windows versions, this class is used in the COverlayContext constructor, which is very convenient for us since we're intercepting this class's function, so let's just look at where this argument is stored.
+
+![IDA COverlayContext constructor pseudocode](.screenshots/wdwmo-offsets-monitortarget.png)
+
+As we can see right at the beginning of the function, this argument is stored at offset `0x0` (`RCX` is `COverlayContext*`, e.g. the 1st parameter - `this`, and `RDX` - `IOverlayMonitorTarget*`, e.g. the 2nd parameter - `monitorTarget`). To automate updating, I find this function, disassemble it, and look for this place - where the second argument is stored at the pointer to the first, and take the offset value.
+
+```cpp
+auto crender_target_offset = ui64_t();
+
+for (auto i = 0ui64, c = function_code.size(); i < c; i++) {
+    const auto& instruction = function_code[i];
+    if (*ui32_p(instruction.info.Mnemonic) != 'vom') continue; 			//is instruction is "mov"
+
+    if (*ui32_p(instruction.operands[0].OpMnemonic) != 'xcr' ||			//is 1st operand is "rcx"
+        *ui32_p(instruction.operands[1].OpMnemonic) != 'xdr') continue; //is 2nd operand is "rdx"
+
+    conlog("[d] disassembled render target storing instruction: \"%s\"\n", instruction.complete_instruction);
+
+    crender_target_offset = instruction.operands[0].Memory.Displacement; //take the 1st operand memory displacement
+
+    break;
+}
+```
+
+---
+
+#### `offsets.dxgi_output_vftable`:
+
+This is also not difficult, just RVA for the symbol "``const ATL::CComObject<class CDXGIOutput>::`vftable'{for `IDXGIOutputDWM'}``" in `dxgi.dll`.
+
+---
+
+#### `offsets.dxgi_output`:
+
+This is where things get more interesting. I couldn't find any direct getters, and to determine the offset, I'd have to search for object usage/calls in related libraries, performing a complex and time-consuming analysis. Instead, since vftables are always located at the beginning of a class, knowing this and the address of the vftable of the desired class, we can simply iterate through each pointer in the structure and check whether the first field of the object pointed to by the pointer is the address of the desired vftable. If so, the object has been found.
+
+```cpp
+IUnknown* get_dxgi_dwm_output(const i32_t render_target_offset, const ui32_t vftable_offset, const range<address_t>& dxgi_bounds, void* overlay_context, i32_t& offset, i32_t begin = 0, i32_t count = 30) noexcept {
+    auto expected_vftable_address = address_t(ui64_t(dxgi_bounds.min) + vftable_offset);
+    auto structure = ui64_p(*ui64_p(ui64_t(overlay_context) + render_target_offset)); //CRenderTarget*
+
+    conlog(
+        "[w] " function_name ": \n"
+        "    dxgi_bounds:     %#llx-%#llx\n"
+        "    overlay_context: %#llx\n"
+        "    offset:          %#lx\n"
+        "    structure:       %#llx\n",
+        dxgi_bounds.min, dxgi_bounds.max,
+        overlay_context,
+        offset,
+        structure);
+
+    if (offset) return (IUnknown*)(*ui64_p(ui64_t(structure) + offset));
+
+    auto start = structure + begin;
+
+    for (auto i = 0i32; i < count; i++) {
+        auto pointer = start[i];
+        if (!ncore::can_access(address_t(pointer))) continue;
+
+        auto vftable_candidate = *address_p(pointer);
+        if (vftable_candidate != expected_vftable_address) continue;
+        
+        offset = i * sizeof(ui64_t);
+
+        return (IUnknown*)pointer;
+    }
+
+    return nullptr;
+}
+```
+
+---
+
+#### `offsets.dxgi_swap_chain`:
+
+Similar to `offsets.render_target`, since I couldn't find any direct getters, I need to find a way to use the required instances, retrieving them from some structure we could access from a hook. Luckily, such a place exists - `CLegacySwapChain::PresentMPO`. 
+
+![IDA CLegacySwapChain::PresentMPO pseudocode](.screenshots/wdwmo-offsets-dxgiswapchain.png)
+
+In this function, `CD3DDevice::PresentMPO` is called, which takes the swapchain we need as the second argument, so I simply look for these two functions, in the first I find the place where the second is called and from there I go back until I find where the second argument is formed.
+
+```cpp
+auto dxgi_swapchain_offset = ui64_t();
+
+for (auto i = 0ui64, c = function_code.size(); i < c; i++) {
+    const auto& instruction = function_code[i];
+    if (*ui32_p(instruction.info.Mnemonic) != 'llac') continue; //is instruction is "call"
+
+    if (instruction.info.AddrValue != expected_delta) continue; //is call for CD3DDevice::PresentMPO
+
+    for (auto j = i, s = 0ui64; j > s; j--) {
+        const auto& second = function_code[j];
+		if (*ui32_p(second.info.Mnemonic) != 'vom') continue; //is instruction is "mov"
+		
+		if (*ui32_p(second.operands[0].OpMnemonic) != 'xdr') continue; //is first operand is "rdx"
+
+		dxgi_swapchain_offset = second.operands[1].Memory.Displacement;
+
+		conlog("[d] disassembled dxgi swap chain storing instruction: \"%s\"\n", second.complete_instruction);
+
+		goto _DXGISCDisassemblyEnd;
+	}
+}
+_DXGISCDisassemblyEnd:
+```
+
+---
+
+#### `offsets.get_physical_back_buffer` and `offsets.get_d3d11_resource`:
+
+Since these two offsets are vftable offsets to functions, their search algorithm is identical. There are two options:
+1. Find the expected vftable and find the desired function in it.
+2. Find the desired function and check all vftables for its presence.
+
+The project implements the first method: we find the expected vftables, then search for these two functions in these vftables. We also compare their offsets, but for now we don't take into account any discrepancies; in general, they are expected to be identical.
+
+```cpp
+const char* vftables[] = {
+    "??_7CLegacySwapChain@@",
+    "??_7CDDisplaySwapChain@@"
+};
+
+const char* methods[] = {
+	"CLegacySwapChain::GetPhysicalBackBuffer",
+	"CDDisplaySwapChain::GetPhysicalBackBuffer"
+};
+
+_result.offsets.get_physical_back_buffer = find_vftable_method_offset(
+	raw,
+	dbi,
+	dwmcore_target.image.data,
+	dwmcore_target.image.size,
+	dwmcore_pe,
+	"get_physical_back_buffer",
+	vftables,
+	_countof(vftables),
+	methods,
+	_countof(methods));
+}
+```
+
+```cpp
+const char* vftables[] = {
+    "??_7CLegacySwapChainBuffer@@",
+    "??_7CDDisplaySwapChainBuffer@@"
+};
+
+const char* methods[] = {
+    "CLegacySwapChainBuffer::GetD3D11Resource",
+    "CDDisplaySwapChainBuffer::GetD3D11Resource"
+};
+
+_result.offsets.get_d3d11_resource = find_vftable_method_offset(
+    raw,
+    dbi,
+    dwmcore_target.image.data,
+    dwmcore_target.image.size,
+    dwmcore_pe,
+    "get_d3d11_resource",
+    vftables,
+    _countof(vftables),
+    methods,
+    _countof(methods));
+```
 
 ---
 
