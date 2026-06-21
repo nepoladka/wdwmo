@@ -28,7 +28,7 @@
 	- [offsets.get_physical_back_buffer and offsets.get_d3d11_resource](#offsetsget_physical_back_buffer-and-offsetsget_d3d11_resource)
   - [Project architecture](#project-architecture)
   - [Multiple initialization](#multiple-initialization-1)
-  - [Licensing](#licensing)
+- [Licensing](#licensing)
 
 ---
 
@@ -225,6 +225,7 @@ The project was developed after studying existing public DWM overlay implementat
 - [aurenex/dwm-overlay](https://github.com/aurenex/dwm-overlay)
   - does not work on Windows 11 24H2+ with NVIDIA drivers.
   - does not support display-configuration changes.
+  - under certain conditions, such as when Discord broadcasting is enabled, everything is displayed directly in the stream, but not on the screen.
 
 - [chaosium43/dwm-overlay](https://github.com/chaosium43/dwm-overlay)
   - works only on Windows 11.
@@ -373,9 +374,9 @@ To draw our own content when hooking DWM, we need to obtain the rendering contex
 - `ID3D11Texture2D`
 - `ID3D11RenderTargetView`
 
-Every DWM overlay project obtains this information from different sources in its own way. For example, `aurenex/dwm-overlay` retrieves the device and texture from the `IDXGISwapChain`, whereas `chaosium43/dwm-overlay` obtains them from internal DWM structures—accessing the first through an offset and the second by calling a virtual function.
+Every DWM overlay project obtains this information from different sources in its own way. For example, `aurenex/dwm-overlay` retrieves the device and texture from the `IDXGISwapChain`, whereas `chaosium43/dwm-overlay` obtains them from internal DWM structures - accessing the first through an offset and the second by calling a virtual function.
 
-Experimental testing in my environments showed that both methods can be streamlined by obtaining a single key object—the `ID3D11Resource`—from which all the other components can be derived, thereby minimizing dependencies.
+Experimental testing in my environments showed that both methods can be streamlined by obtaining a single key object- the `ID3D11Resource`, from which all the other components can be derived, thereby minimizing dependencies.
 
 At first, I looked for direct getters and found only these:
 
@@ -433,11 +434,11 @@ HRESULT __fastcall COverlayContext::Present(
     bool legacy_present);
 ```
 
-At this stage, we can already build an experimental version capable of rendering something. However, a properly targeted overlay also requires additional information—at minimum, the desktop rectangle. With the data obtained so far, this is impossible if we need to account for all display modes, including **duplicate** and **extend**.
+At this stage, we can already build an experimental version capable of rendering something. However, a properly targeted overlay also requires additional information - at minimum, the desktop rectangle. With the data obtained so far, this is impossible if we need to account for all display modes, including **duplicate** and **extend**.
 
 We cannot simply map these objects together because there is no direct dependency chain from `device` / `device_context` / `resource` / `render_target_view` to `dxgi_output`, and heuristic mappings are essentially guesswork with varying degrees of success.
 
-Here, we need at least two values: the source-path VidPn ID and the target-path VidPn ID. I will not go into the details of how `QueryDisplayConfig` works on Windows, but both IDs are required to obtain the necessary information reliably. It is, of course, possible to manage with only one—the target VidPn ID—especially because the Windows 11 version of `dwmcore` has:
+Here, we need at least two values: the source-path VidPn ID and the target-path VidPn ID. I will not go into the details of how `QueryDisplayConfig` works on Windows, but both IDs are required to obtain the necessary information reliably. It is, of course, possible to manage with only one - the target VidPn ID, especially because the Windows 11 version of `dwmcore` has:
 
 ```text
 1801ED7E0 CLegacySwapChain::GetVidPnTargetId(void)
@@ -640,19 +641,19 @@ Now that we have established the complete set of items required for the task, we
 
 Their purposes are:
 
-- `present` — the RVA in `dwmcore.dll` of the main hook target.
+- `present` - the RVA in `dwmcore.dll` of the main hook target.
 
-- `render_target` — the offset from a `COverlayContext` instance to `CLegacy-/CDDisplay-RenderTarget`. This is required to identify the physical output monitor correctly, specifically its logical rectangle, VidPn ID, friendly name, and GDI name.
+- `render_target` - the offset from a `COverlayContext` instance to `CLegacy-/CDDisplay-RenderTarget`. This is required to identify the physical output monitor correctly, specifically its logical rectangle, VidPn ID, friendly name, and GDI name.
 
-- `dxgi_output_vftable` — the RVA in `dxgi.dll` of the vftable located at the beginning of the `DXGIOutputDWM` object. It is used to identify the correct object.
+- `dxgi_output_vftable` - the RVA in `dxgi.dll` of the vftable located at the beginning of the `DXGIOutputDWM` object. It is used to identify the correct object.
 
-- `dxgi_output` — the offset from `CLegacy-/CDDisplay-RenderTarget` to the field containing `IDXGIOutputDWM*`. It is more difficult to determine statically than to obtain at runtime.
+- `dxgi_output` - the offset from `CLegacy-/CDDisplay-RenderTarget` to the field containing `IDXGIOutputDWM*`. It is more difficult to determine statically than to obtain at runtime.
 
-- `dxgi_swap_chain` — the offset from `IOverlaySwapChain` to the field containing `IDXGISwapChainDWM`, allowing it to be used in legacy present-path configurations.
+- `dxgi_swap_chain` - the offset from `IOverlaySwapChain` to the field containing `IDXGISwapChainDWM`, allowing it to be used in legacy present-path configurations.
 
-- `get_physical_back_buffer` — the `IOverlaySwapChain` vftable offset of the corresponding function used to retrieve the object from which `ID3D11Resource` is obtained.
+- `get_physical_back_buffer` - the `IOverlaySwapChain` vftable offset of the corresponding function used to retrieve the object from which `ID3D11Resource` is obtained.
 
-- `get_d3d11_resource` — the `IOverlaySwapChainBuffer` vftable offset of the corresponding function used to retrieve `ID3D11Resource`.
+- `get_d3d11_resource` - the `IOverlaySwapChainBuffer` vftable offset of the corresponding function used to retrieve `ID3D11Resource`.
 
 All of this can be determined automatically through static analysis.
 
@@ -660,7 +661,7 @@ All of this can be determined automatically through static analysis.
 
 ### Offsets determination
 
-Obtaining offsets is automated (wdwmcd), but below I will describe how exactly offsets are found, and how you can do it manually using IDA or something else.
+Obtaining offsets is automated ([wdwmcd](parts/dumper/)), but below I will describe how exactly offsets are found, and how you can do it manually using IDA or something else.
 
 #### `offsets.present`:
 
@@ -670,7 +671,7 @@ Nothing complicated, just RVA for the "`COverlayContext::Present`" symbol, you c
 
 #### `offsets.render_target`:
 
-This is a bit more complicated, since we're talking about an offset into a structure whose layout isn't specified in the PDB file. We need to track down where and how this object is used. This isn't a difficult task; simply search IDA for the keywords "`RenderTarget`", "`MonitorTarget`", and other renames of these classes. In both Windows versions, this class is used in the COverlayContext constructor, which is very convenient for us since we're intercepting this class's function, so let's just look at where this argument is stored.
+This is a bit more complicated, since we're talking about an offset into a structure whose layout isn't specified in the PDB file. We need to track down where and how this object is used. This isn't a difficult task; simply search IDA for the keywords "`RenderTarget`", "`MonitorTarget`", and other renames of these classes. In both Windows versions, this class is used in the `COverlayContext` constructor, which is very convenient for us since we're intercepting this class's function, so let's just look at where this argument is stored.
 
 ![IDA COverlayContext constructor pseudocode](.screenshots/wdwmo-offsets-monitortarget.png)
 
@@ -844,7 +845,7 @@ The project is designed as a statically linked, callback-based library whose cor
 
 The project consists of three parts:
 
-- `wdwmo` (`Windows DWM Overlay`): the project core—a module loaded directly into `dwm.exe`. The Debug build includes a sample implementation featuring an **ImGui** window that displays basic information.
+- `wdwmo` (`Windows DWM Overlay`): the project core - a module loaded directly into `dwm.exe`. The Debug build includes a sample implementation featuring an **ImGui** window that displays basic information.
 
 - `wdwmcd` (`Windows DWM Core Dumper`): a module responsible for automatically retrieving all required offsets and analyzing `dwmcore.dll` and `dxgi.dll` using PDB files.
 
@@ -912,7 +913,7 @@ The mechanism is intentionally operator-managed because the storage location and
 
 ---
 
-### Licensing
+## Licensing
 
 The original project code is released under the [MIT License](license.txt):
 
