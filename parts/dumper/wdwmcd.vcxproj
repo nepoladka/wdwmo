@@ -124,6 +124,11 @@
     <Lib>
       <AdditionalLibraryDirectories>$(solutiondir)shared\includes\libraries\;$(solutiondir)out\wdwmcd\$(platform)\$(configuration)\final\</AdditionalLibraryDirectories>
     </Lib>
+    <PostBuildEvent>
+      <Command>xcopy "$(solutiondir)parts\types.hpp" "$(outdir)" /D /Y
+xcopy "$(solutiondir)parts\configuration.hpp" "$(outdir)" /D /Y
+xcopy "$(projectdir)$(projectname).hpp" "$(outdir)" /D /Y</Command>
+    </PostBuildEvent>
   </ItemDefinitionGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
