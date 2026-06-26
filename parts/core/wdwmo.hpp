@@ -39,7 +39,11 @@ namespace wdwmo {
 			cant_get_device_context,
 			cant_get_target_view,
 			cant_get_display_config_buffer_sizes,
-			cant_get_display_config
+			cant_get_display_config,
+
+			wrong_image_timestamp,
+			wrong_image_size,
+			wrong_image_checksum
         } value;
 
         struct extended_t {
@@ -426,6 +430,11 @@ namespace wdwmo {
 		ui64_t supported_with_troubles = 2) noexcept;
 
     status_t was_initialized_before(initialization_guard* guard, bool& _result) noexcept;
+
+	status_t::extended_t validate_configuration(
+		const configuration_t& configuration,
+		ui64_t dwmcore_module_identifier = 'dwmc',
+		ui64_t dxgi_module_identifier = 'dxgi') noexcept;
 
     status_t initialize(
 		const configuration_t& configuration,

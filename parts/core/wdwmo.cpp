@@ -878,6 +878,34 @@ namespace wdwmo {
         return status_t::success;
     }
 
+    status_t::extended_t validate_configuration(
+        const configuration_t& configuration,
+        ui64_t dwmcore_module_identifier,
+        ui64_t dxgi_module_identifier) noexcept {
+        auto process = ncore::process::current(null);
+        if (!process.alive()) return { status_t::cant_access_current_process };
+
+        auto check_module = [](ncore::process& process, const char* name, const executable_image_info_t& image) -> status_t {
+            auto module = ncore::process::module_t();
+            if (!process.search_module(name, &module)) return status_t::core_module_not_found;
+
+            auto info = executable_image_info_t();
+            if (!utils::get_pe_info(module.address(), module.size(), info)) return status_t::cant_get_pe_info;
+
+            if (image.timestamp != info.timestamp) return status_t::wrong_image_timestamp;
+            if (image.size != info.size) return status_t::wrong_image_size;
+            if (image.checksum != info.checksum) return status_t::wrong_image_checksum;
+
+            return status_t::success;
+        };
+
+        if (auto status = check_module(process, "dwmcore.dll", configuration.image_info.dwmcore)) return { status.value, dwmcore_module_identifier };
+
+        if (auto status = check_module(process, "dxgi.dll", configuration.image_info.dxgi)) return { status.value, dxgi_module_identifier };
+
+        return { status_t::success };
+    }
+
     status_t initialize(
         const configuration_t& configuration,
         initialization_callback_t initialization_callback,

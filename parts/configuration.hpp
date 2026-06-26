@@ -37,4 +37,6 @@ namespace wdwmo {
             }
         }offsets = { };
     };
+
+    using configuration_p = configuration_t*;
 }
