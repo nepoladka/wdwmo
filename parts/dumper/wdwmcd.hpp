@@ -21,6 +21,8 @@ namespace wdwmcd {
             pdb_parsing_failed,
             symbol_not_found,
             unsupported_pdb,
+
+            _total_count
         } value;
 
         struct extended_t {
@@ -31,6 +33,24 @@ namespace wdwmcd {
         __forceinline status_t(byte_t value = {}) noexcept : value(enum_t(value)) { return; }
         __forceinline status_t(enum_t value) noexcept : value(value) { return; }
         __forceinline operator byte_t() const noexcept { return value; }
+
+        __forceinline const char* c_str() const noexcept {
+            static constexpr const char* const __values[] = {
+                "success",
+                "error",
+                "aborted",
+                "invalid_argument_passed",
+                "wrong_pe_header",
+                "pdb_info_not_found",
+                "pdb_parsing_failed",
+                "symbol_not_found",
+                "unsupported_pdb",
+            };
+
+            return (value < success || value >= _total_count) ?
+                "unknown" :
+                __values[value];
+        }
     };
 
     struct target_t {

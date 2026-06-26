@@ -43,7 +43,9 @@ namespace wdwmo {
 
 			wrong_image_timestamp,
 			wrong_image_size,
-			wrong_image_checksum
+			wrong_image_checksum,
+
+			_total_count
         } value;
 
         struct extended_t {
@@ -54,6 +56,44 @@ namespace wdwmo {
         __forceinline status_t(byte_t value = {}) noexcept : value(enum_t(value)) { return; }
         __forceinline status_t(enum_t value) noexcept : value(value) { return; }
         __forceinline operator byte_t() const noexcept { return value; }
+
+		__forceinline const char* c_str() const noexcept {
+			static constexpr const char* const __values[] = {
+				"success",
+				"error",
+				"aborted",
+				"invalid_argument_passed",
+				"unexpected_state",
+				"guard_not_set",
+				"callback_not_set",
+				"not_initialized",
+				"cant_access_current_process",
+				"core_module_not_found",
+				"unexpected_system_build",
+				"hook_initialization_failure",
+				"hook_creating_failed",
+				"hook_enabling_failed",
+				"hook_disabling_failed",
+				"cant_retrieve_dxgi_chain",
+				"chain_environment_not_found",
+				"wrong_configuration_target",
+				"cant_get_pe_info",
+				"cant_get_chain_buffer",
+				"cant_get_resource",
+				"cant_get_device",
+				"cant_get_device_context",
+				"cant_get_target_view",
+				"cant_get_display_config_buffer_sizes",
+				"cant_get_display_config",
+				"wrong_image_timestamp",
+				"wrong_image_size",
+				"wrong_image_checksum"
+			};
+
+			return (value < success || value >= _total_count) ?
+				"unknown" :
+				__values[value];
+		}
     };
 
 	struct output_display_info_t {
