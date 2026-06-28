@@ -48,6 +48,21 @@ public:
     }target_window = { };
 
 
+    static vec2i32 make_relative_position(const vec2i32& position, const wdwmo::rect_t& rect, const vec2f& scale) {
+        return {
+            i32_t(std::floor(float(position.x - rect.left) * scale.x)),
+            i32_t(std::floor(float(position.y - rect.top) * scale.y))
+        };
+    }
+
+    static vec2i32 make_relative_size(const vec2i32& size, const vec2f& scale) {
+        return {
+            i32_t(std::floor(float(size.x) * scale.x)),
+            i32_t(std::floor(float(size.y) * scale.y))
+        };
+    }
+
+
     wtoverlay(const std::string& name) {
         target_window.name = name;
     }
@@ -81,17 +96,11 @@ public:
     }
 
     vec2i32 get_relative_position(const wdwmo::rect_t& rect, const vec2f& scale) {
-        return {
-            i32_t(std::floor(float(target_window.position.x - rect.left) * scale.x)),
-            i32_t(std::floor(float(target_window.position.y - rect.top) * scale.y))
-        };
+        return make_relative_position(target_window.position, rect, scale);
     }
 
     vec2i32 get_relative_size(const vec2f& scale) {
-        return {
-            i32_t(std::floor(float(target_window.size.x) * scale.x)),
-            i32_t(std::floor(float(target_window.size.y) * scale.y))
-        };
+        return make_relative_size(target_window.size, scale);
     }
 
     bool get_window_info(bool update_handle = false) {
@@ -274,8 +283,14 @@ LRESULT CALLBACK mouse_callback(int nCode, WPARAM wParam, LPARAM lParam) noexcep
     const auto info = (MSLLHOOKSTRUCT*)lParam;
 
     if (ImGui::GetCurrentContext()) {
+        auto monitor = MonitorFromPoint(info->pt, MONITOR_DEFAULTTONEAREST);
+        auto scale = wdwmo::utils::get_monitor_scale(monitor);
+        auto rect = wdwmo::utils::get_monitor_rect(monitor);
+
+        auto position = wtoverlay::make_relative_position(*(vec2i32*)&info->pt, rect, *(vec2f*)&scale);
+
         const auto wparam = translate_mouse_wparam(wParam, info);
-        const auto lparam = MAKELPARAM(info->pt.x, info->pt.y);
+        const auto lparam = MAKELPARAM(position.x, position.y);
 
         ImGui_ImplWin32_WndProcHandler(
             GetDesktopWindow(),
