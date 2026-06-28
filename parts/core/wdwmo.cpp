@@ -22,12 +22,15 @@
 #pragma comment(lib, "dxgi.lib")
 #pragma comment(lib, "shcore.lib")
 
+//#ifdef DEBUG
+#define WDWMO_LOGS
+//#endif
 
 //#define WDWMO_DIAGNOSTICS
 #define WDWMO_NO_HOT_LOG
 #define function_name "\033[96m" __FUNCTION__ "\033[0m"
 
-#ifdef DEBUG
+#ifdef WDWMO_LOGS
 #define conlog debug::conlogf
 #ifdef WDWMO_NO_HOT_LOG
 #define conlogh(...)
@@ -51,14 +54,31 @@ namespace wdwmo {
 
     namespace debug {
         static HANDLE console_output = nullptr;
+        static message_callback_t message_callback = nullptr;
 
-        void set_console_output(void* handle) noexcept { console_output = (HANDLE)handle; }
-        void* get_console_output() noexcept { return console_output; }
+        void set_message_callback(message_callback_t callback) noexcept {
+            message_callback = callback;
+        }
+
+        message_callback_t get_message_callback() noexcept {
+            return message_callback;
+        }
+
+        void set_console_output(void* handle) noexcept { 
+            console_output = (HANDLE)handle; 
+        }
+
+        void* get_console_output() noexcept { 
+            return console_output;
+        }
 
         int conlogf(const char* fmt, ...) noexcept {
-            if (!console_output || console_output == INVALID_HANDLE_VALUE) return 0;
+            bool console = console_output && console_output != INVALID_HANDLE_VALUE;
+            bool callback = message_callback;
 
-            char buffer[4096] = {};
+            if (!console && !callback) return null;
+
+            char buffer[4096] = { };
             va_list args;
             va_start(args, fmt);
             int len = vsnprintf(buffer, sizeof(buffer), fmt, args);
@@ -70,9 +90,13 @@ namespace wdwmo {
                 len = int(sizeof(buffer)) - 1;
             }
 
+            if (callback) return int(message_callback(buffer, len));
+            else if (console) {
             auto written = DWORD();
             WriteConsoleA(console_output, buffer, DWORD(len), &written, nullptr);
             return int(written);
+        }
+            else return null; //unreachable
         }
 
         ui64_t conlogfh(ui64_t delay, ui64_t previous, const char* fmt, ...) noexcept {
@@ -80,9 +104,12 @@ namespace wdwmo {
 
             auto current = no_delay ? 0 : GetTickCount64();
             if (no_delay || (current - previous) > delay) {
-                if (!console_output || console_output == INVALID_HANDLE_VALUE) return null;
+                bool console = console_output && console_output != INVALID_HANDLE_VALUE;
+                bool callback = message_callback;
 
-                char buffer[4096] = {};
+                if (!console && !callback) return null;
+
+                char buffer[4096] = { };
                 va_list args;
                 va_start(args, fmt);
                 int len = vsnprintf(buffer, sizeof(buffer), fmt, args);
@@ -94,8 +121,16 @@ namespace wdwmo {
                     len = int(sizeof(buffer)) - 1;
                 }
 
+                if (callback) {
+                    message_callback(buffer, len);
+                }
+                else if (console) {
                 auto written = DWORD();
                 WriteConsoleA(console_output, buffer, DWORD(len), &written, nullptr);
+                }
+                else {
+                    //nothing, unreachable
+                }
 
                 return current;
             }

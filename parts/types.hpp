@@ -46,4 +46,6 @@ namespace wdwmo::types {
 
     using rect_p = rect_t*;
     using luid_p = luid_t*;
+
+    using message_callback_t = size_t(*)(const char* message, size_t length); //debug
 }

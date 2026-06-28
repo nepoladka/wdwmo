@@ -34,26 +34,50 @@ namespace wdwmcd {
     using namespace ncore::types;
 
     namespace debug {
-        static HANDLE g_console_out = nullptr;
+        static HANDLE console_output = nullptr;
+        static message_callback_t message_callback = nullptr;
 
-        void set_console_output(void* handle) noexcept { g_console_out = (HANDLE)handle; }
-        void* get_console_output() noexcept { return g_console_out; }
+        void set_message_callback(message_callback_t callback) noexcept {
+            message_callback = callback;
+        }
+
+        message_callback_t get_message_callback() noexcept {
+            return message_callback;
+        }
+
+        void set_console_output(void* handle) noexcept {
+            console_output = (HANDLE)handle;
+        }
+
+        void* get_console_output() noexcept {
+            return console_output;
+        }
 
         int conlogf(const char* fmt, ...) noexcept {
-            if (!g_console_out || g_console_out == INVALID_HANDLE_VALUE) return 0;
+            bool console = console_output && console_output != INVALID_HANDLE_VALUE;
+            bool callback = message_callback;
 
-            char buffer[4096] = {};
+            if (!console && !callback) return null;
+
+            char buffer[4096] = { };
             va_list args;
             va_start(args, fmt);
             int len = vsnprintf(buffer, sizeof(buffer), fmt, args);
             va_end(args);
 
-            if (len <= 0) return 0;
-            if (len >= int(sizeof(buffer))) len = int(sizeof(buffer)) - 1;
+            if (len <= 0) return null;
 
-            DWORD written = 0;
-            WriteConsoleA(g_console_out, buffer, DWORD(len), &written, nullptr);
-            return int(written);
+            if (len >= int(sizeof(buffer))) {
+                len = int(sizeof(buffer)) - 1;
+            }
+
+            if (callback) return int(message_callback(buffer, len));
+            else if (console) {
+                auto written = DWORD();
+                WriteConsoleA(console_output, buffer, DWORD(len), &written, nullptr);
+                return int(written);
+            }
+            else return null; //unreachable
         }
     }
 

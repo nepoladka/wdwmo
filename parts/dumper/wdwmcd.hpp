@@ -84,8 +84,12 @@ namespace wdwmcd {
         configuration_t& _result) noexcept;
 
     namespace debug {
+        void set_message_callback(message_callback_t callback) noexcept;
+        message_callback_t get_message_callback() noexcept;
+
         void set_console_output(void* handle) noexcept;
         void* get_console_output() noexcept;
+
         int conlogf(const char* fmt, ...) noexcept;
     }
 }

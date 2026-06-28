@@ -487,8 +487,12 @@ namespace wdwmo {
     status_t terminate(initialization_guard* guard = nullptr) noexcept;
 
     namespace debug {
+		void set_message_callback(message_callback_t callback) noexcept;
+		message_callback_t get_message_callback() noexcept;
+
         void set_console_output(void* handle) noexcept;
         void* get_console_output() noexcept;
+        
         int conlogf(const char* fmt, ...) noexcept;
 		ui64_t conlogfh(ui64_t delay, ui64_t previous, const char* fmt, ...) noexcept;
     }
