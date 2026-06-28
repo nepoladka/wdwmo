@@ -22,6 +22,10 @@ namespace wdwmcd {
             symbol_not_found,
             unsupported_pdb,
 
+            invalid_process,
+            module_not_found,
+            target_not_found,
+
             _total_count
         } value;
 
@@ -45,6 +49,10 @@ namespace wdwmcd {
                 "pdb_parsing_failed",
                 "symbol_not_found",
                 "unsupported_pdb",
+
+                "invalid_process",
+                "module_not_found",
+                "target_not_found"
             };
 
             return (value < success || value >= _total_count) ?
@@ -82,6 +90,14 @@ namespace wdwmcd {
         const target_t& dwmcore_target,
         const target_t& dxgi_target,
         configuration_t& _result) noexcept;
+
+    namespace experimental {
+        //tries to detect runtime configuration offsets in alive dwm.exe
+        status_t try_detect_runtime_offsets_externally(
+            const target_t& dwmcore_target,
+            void* dwm_process_handle, //HANDLE
+            configuration_t& configuration) noexcept;
+    }
 
     namespace debug {
         void set_message_callback(message_callback_t callback) noexcept;

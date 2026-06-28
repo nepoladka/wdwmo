@@ -85,10 +85,26 @@ wdwmcd::status_t get_configuration(std::string dwmcore_path, std::string dxgi_pa
 		dxgi_pdb.swap(response.data);
 	}
 
-	return wdwmcd::detect_configuration(
+	auto result = wdwmcd::detect_configuration(
 		{ .image = {.data = dwmcore_file.data(), .size = dwmcore_file.size()}, .pdb = {.data = dwmcore_pdb.data(), .size = dwmcore_pdb.size()} },
 		{ .image = {.data = dxgi_file.data(), .size = dxgi_file.size()}, .pdb = {.data = dxgi_pdb.data(), .size = dxgi_pdb.size()} },
 		_result);
+
+	if (auto dwm = ncore::process::get_by_name("dwm"); dwm.alive()) {
+		auto handle = dwm.handle(ncore::__defaultProcessOpenAccess);
+
+		auto status = wdwmcd::experimental::try_detect_runtime_offsets_externally(
+			{ .image = {.data = dwmcore_file.data(), .size = dwmcore_file.size()}, .pdb = {.data = dwmcore_pdb.data(), .size = dwmcore_pdb.size()} },
+			handle,
+			_result);
+
+		conlog("[l] wdwmcd::experimental::try_detect_runtime_offsets_externally returned %d (%s)\n", status, status.c_str());
+	}
+	else {
+		conlog("[l] can't try experimental features, dwm.exe isn't alive or not found\n");
+	}
+
+	return result;
 }
 
 bool check_initialization(ncore::process& process, wdwmo::working_set* _current_set) {
@@ -116,6 +132,19 @@ int main(int argc, char** argv) {
 	auto status = 1;
 
 	wdwmcd::debug::set_console_output(GetStdHandle(STD_OUTPUT_HANDLE));
+
+	if (!ncore::process::current().set_privilege(SE_DEBUG_NAME, true)) {
+		conlog("[l] can't set debug privilege\n");
+
+	_Exit:
+		conlog("[l] execution result: %d\n", status);
+
+		if (!IsDebuggerPresent()) {
+			system("pause");
+		}
+
+		return status;
+	}
 
 	conlog("[l] windows build number: %d, arguments count: %d\n", ncore::get_system_version().build, argc);
 
@@ -155,6 +184,7 @@ int main(int argc, char** argv) {
 		"    offsets.present:                  %08x\n"
 		"    offsets.render_target:            %08x\n"
 		"    offsets.dxgi_output_vftable:      %08x\n"
+		"    offsets.dxgi_output:              %08x\n"
 		"    offsets.dxgi_swap_chain:          %08x\n"
 		"    offsets.get_physical_back_buffer: %08x\n"
 		"    offsets.get_d3d11_resource:       %08x\n",
@@ -163,24 +193,12 @@ int main(int argc, char** argv) {
 		configuration.offsets.present,
 		configuration.offsets.render_target,
 		configuration.offsets.dxgi_output_vftable,
+		configuration.offsets.dxgi_output,
 		configuration.offsets.dxgi_swap_chain,
 		configuration.offsets.get_physical_back_buffer,
 		configuration.offsets.get_d3d11_resource);
 
 	system("pause");
-
-	if (!ncore::process::current().set_privilege(SE_DEBUG_NAME, true)) {
-		conlog("[l] can't set debug privilege\n");
-
-	_Exit:
-		conlog("[l] execution result: %d\n", status);
-
-		if (!IsDebuggerPresent()) {
-			system("pause");
-		}
-
-		return status;
-	}
 
 	auto dwm = ncore::process::get_by_name("dwm");
 	if (!dwm.alive()) {

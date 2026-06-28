@@ -2,6 +2,8 @@
 
 #include "../../../ncore/source/utils.hpp"
 #include "../../../ncore/source/disassembly.hpp"
+#include "../../../ncore/source/process.hpp"
+#include "../../../ncore/source/signature.hpp"
 
 #include <windows.h>
 #include <tlhelp32.h>
@@ -1194,5 +1196,122 @@ namespace wdwmcd {
             _result)) return status;
 
         return status_t::success;
+    }
+
+    namespace experimental {
+        status_t try_detect_runtime_offsets_externally(
+            const target_t& dwmcore_target,
+            void* dwm_process_handle,
+            configuration_t& configuration) noexcept {
+            auto process = ncore::process(dwm_process_handle);
+            if (!process.alive()) return status_t::invalid_process;
+
+            auto dwmcore_module = ncore::process::module_t();
+            if (!process.search_module("dwmcore.dll", &dwmcore_module)) return status_t::module_not_found;
+
+            auto dxgi_module = ncore::process::module_t();
+            if (!process.search_module("dxgi.dll", &dxgi_module)) return status_t::module_not_found;
+
+            //todo: validate modules image info with configuration
+
+            auto detect_dxgi_output_offset = [&](i32_t& _offset) -> status_t {
+                /*
+                    1. get output vftable address
+                    2. get holders objects vftables addresses
+                    3. find all outputs
+                    4. find all output holders
+                    5. find holder begin by its expected vftable
+                */
+
+                auto output_vftable_offset = configuration.offsets.dxgi_output_vftable;
+                if (!output_vftable_offset) return status_t::invalid_argument_passed;
+
+                auto object_vftables_offsets = std::vector<ui32_t>(); {
+                    if (PDB::ValidateFile(dwmcore_target.pdb.data, dwmcore_target.pdb.size) != PDB::ErrorCode::Success) return status_t::pdb_parsing_failed;
+
+                    auto raw = PDB::CreateRawFile(dwmcore_target.pdb.data);
+                    if (PDB::HasValidDBIStream(raw) != PDB::ErrorCode::Success) return status_t::unsupported_pdb;
+
+                    auto dbi = PDB::CreateDBIStream(raw);
+                    if (dbi.HasValidImageSectionStream(raw) != PDB::ErrorCode::Success) return status_t::unsupported_pdb;
+                    if (dbi.HasValidSymbolRecordStream(raw) != PDB::ErrorCode::Success) return status_t::unsupported_pdb;
+
+                    const char* vftables[] = {
+                        "??_7CLegacyRenderTarget@@6BIOverlayMonitorTarget@@@",
+                        "??_7CDDisplayRenderTarget@@6BIOverlayMonitorTarget@@@",
+                        "??_7CLegacyStereoRenderTarget@@6BIOverlayMonitorTarget@@@",
+
+                        "??_7CLegacyStereoRenderTarget@@6BIRenderTarget@@IOverlayMonitorTarget@@@",
+                        "??_7CLegacyRenderTarget@@6BIPixelFormat@@IOverlayMonitorTarget@@@",
+                        "??_7CDDisplayRenderTarget@@6BIRenderTarget@@IOverlayMonitorTarget@@@",
+                        "??_7CDDisplayRenderTarget@@6BIPixelFormat@@IOverlayMonitorTarget@@@",
+                        "??_7CLegacyStereoRenderTarget@@6BIPixelFormat@@IOverlayMonitorTarget@@@"
+                    };
+
+                    for (const auto& name : vftables) {
+                        std::vector<ui32_t> vftable_rvas{};
+                        details::collect_vftable_rvas_by_prefix(raw, dbi, name, vftable_rvas);
+
+                        if (vftable_rvas.empty()) continue;
+
+                        object_vftables_offsets.insert(object_vftables_offsets.end(), vftable_rvas.begin(), vftable_rvas.end());
+                    }
+
+                    if (object_vftables_offsets.empty()) return status_t::symbol_not_found;
+                }
+
+                auto object_vftables_addresses = ncore::collection<ui64_t>(); {
+                    object_vftables_addresses.reserve(object_vftables_offsets.size());
+                }
+
+                for (const auto& offset : object_vftables_offsets) {
+                    object_vftables_addresses.push_back(dwmcore_module.address<ui64_t>() + offset);
+                }
+
+                auto output_vftable_address = dxgi_module.address<ui64_t>() + output_vftable_offset;
+                auto output_vftable_signature = ncore::signature(byte_p(&output_vftable_address), sizeof(address_t));
+
+                auto outputs = ncore::vector<address_t>();
+                if (!output_vftable_signature.search(process.handle(), 0x0, 0x7fff'ffff'ffff, &outputs, ~0ui64, nullptr, 2) || outputs.empty()) return status_t::target_not_found;
+
+                auto results = ncore::collection<i32_t>();
+
+                for (auto address : outputs) {
+                    auto address_signature = ncore::signature(byte_p(&address), sizeof(address_t));
+                    auto output_holders = ncore::vector<address_t>();
+
+                    if (!address_signature.search(process.handle(), 0x0, 0x7fff'ffff'ffff, &output_holders, 1, nullptr, 2) || output_holders.empty()) continue;
+
+                    ui64_t buffer[30] = { };
+                    if (!process.read_memory(address_t(ui64_t(output_holders.front()) - sizeof(buffer)), sizeof(buffer), buffer)) continue;
+
+                    for (i32_t c = sizeofarr(buffer) - 1, i = 0i32; c >= 0; c--, i++) {
+                        if (!object_vftables_addresses.contains(buffer[c])) continue;
+
+                        results.push_back((i + 1) * sizeof(address_t));
+
+                        break;
+                    }
+                }
+
+                if (results.empty()) {
+                    conlog("[d] experimental, external runtime offsets detection: can't detect dxgi_output offsets\n");
+                }
+                else {
+                    conlog("[d] experimental, external runtime offsets detection: detected %d dxgi_output offsets, selected: %08x\n", results.size(), results.front());
+
+                    _offset = results.front();
+
+                    return status_t::success;
+                }
+
+                return status_t::error;
+            };
+
+            auto dxgi_output_offset = i32_t(); //configuration.offsets.dxgi_output
+            if (auto status = detect_dxgi_output_offset(dxgi_output_offset)) return status;
+
+            return status_t::success;
+        }
     }
 }
