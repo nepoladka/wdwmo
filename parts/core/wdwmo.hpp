@@ -486,6 +486,12 @@ namespace wdwmo {
 
     status_t terminate(initialization_guard* guard = nullptr) noexcept;
 
+	namespace utils {
+		bool is_monitor_primary(void* monitor) noexcept;
+		rect_t get_monitor_rect(void* monitor = nullptr, bool work = false) noexcept;
+		ui64_t get_monitor_scale(void* monitor = nullptr) noexcept; //returns float[2], x/y
+	}
+
     namespace debug {
 		void set_message_callback(message_callback_t callback) noexcept;
 		message_callback_t get_message_callback() noexcept;

@@ -179,7 +179,7 @@ namespace wdwmo {
             return _t(function);
         }
 
-        __forceinline vec2f get_monitor_scale(HMONITOR monitor = nullptr) noexcept {
+        __forceinline vec2f get_monitor_scale(HMONITOR monitor) noexcept {
             UINT x = 96;
             UINT y = 96;
 
@@ -191,12 +191,34 @@ namespace wdwmo {
             };
         }
 
-        __forceinline bool is_monitor_primary(HMONITOR monitor) noexcept {
-            auto monitor_info = MONITORINFO{
+        bool is_monitor_primary(void* monitor) noexcept {
+            if (!monitor) return true;
+
+            auto info = MONITORINFO{
                 .cbSize = sizeof(MONITORINFO)
             };
 
-            return GetMonitorInfoA(monitor, &monitor_info) && (monitor_info.dwFlags & MONITORINFOF_PRIMARY) != 0;
+            return GetMonitorInfoA((HMONITOR)monitor, &info) && (info.dwFlags & MONITORINFOF_PRIMARY) != 0;
+        }
+
+        rect_t get_monitor_rect(void* monitor, bool work) noexcept {
+            if (!monitor) {
+                monitor = MonitorFromPoint({ .x = 0, .y = 0 }, MONITOR_DEFAULTTOPRIMARY);
+            }
+
+            auto info = MONITORINFO{
+                .cbSize = sizeof(MONITORINFO)
+            };
+
+            GetMonitorInfoA((HMONITOR)monitor, &info);
+
+            return *rect_p(work ?
+                (&info.rcWork) :
+                (&info.rcMonitor));
+        }
+
+        ui64_t get_monitor_scale(void* monitor) noexcept {
+            return *ui64_p(get_monitor_scale((HMONITOR)monitor).array);
         }
     }
 
