@@ -92,10 +92,10 @@ namespace wdwmo {
 
             if (callback) return int(message_callback(buffer, len));
             else if (console) {
-            auto written = DWORD();
-            WriteConsoleA(console_output, buffer, DWORD(len), &written, nullptr);
-            return int(written);
-        }
+                auto written = DWORD();
+                WriteConsoleA(console_output, buffer, DWORD(len), &written, nullptr);
+                return int(written);
+            }
             else return null; //unreachable
         }
 
@@ -125,8 +125,8 @@ namespace wdwmo {
                     message_callback(buffer, len);
                 }
                 else if (console) {
-                auto written = DWORD();
-                WriteConsoleA(console_output, buffer, DWORD(len), &written, nullptr);
+                    auto written = DWORD();
+                    WriteConsoleA(console_output, buffer, DWORD(len), &written, nullptr);
                 }
                 else {
                     //nothing, unreachable
@@ -287,7 +287,7 @@ namespace wdwmo {
 
             for (auto i = 0i32; i < count; i++) {
                 auto pointer = start[i];
-                if (!ncore::can_access(address_t(pointer))) continue;
+                if (!ncore::can_access_range(address_t(pointer), address_t(pointer + sizeof(address_t)))) continue;
 
                 auto vftable_candidate = *address_p(pointer);
                 if (vftable_candidate != expected_vftable_address) continue;
@@ -402,10 +402,20 @@ namespace wdwmo {
             return true;
         }
 
-        bool get_environment_info(chain_info_t& _info,
+        bool get_environment_info(
+            chain_info_t& _info,
             ID3D11Device* device,
             ID3D11Texture2D* buffer,
             IUnknown* output = nullptr) noexcept {
+            conlog(
+                "[w] " function_name ": \n"
+                "    device: %#llx\n"
+                "    buffer: %#llx\n"
+                "    output: %#llx\n",
+                device,
+                buffer,
+                output);
+
             if (!device || !buffer) return false;
 
             get_buffer_info(_info, buffer);
@@ -414,12 +424,12 @@ namespace wdwmo {
                 if (auto adapter = CComPtr<IDXGIAdapter>(); SUCCEEDED(dxgi_device->GetAdapter(&adapter))) {
                     get_adapter_info(_info, adapter);
 
-                    auto monitor = HMONITOR();
-                    //auto gdi_name = std::wstring();
-                    auto source_vid_pn_id = ui32_t();
-                    auto target_vid_pn_id = ui32_t();
-
                     if (output) {
+                        auto monitor = HMONITOR();
+                        //auto gdi_name = std::wstring();
+                        auto source_vid_pn_id = ui32_t();
+                        auto target_vid_pn_id = ui32_t();
+
                         if (auto dxgi_output = CComPtr<IDXGIOutput>(); SUCCEEDED(output->QueryInterface(IID_PPV_ARGS(&dxgi_output)))) {
                             if (auto description = DXGI_OUTPUT_DESC(); SUCCEEDED(dxgi_output->GetDesc(&description))) {
                                 //gdi_name = description.DeviceName;
@@ -459,7 +469,6 @@ namespace wdwmo {
                                     encoded.c_str());
                             }
                         }
-                    }
 
                     get_output_display_info(
                         _info,
@@ -467,6 +476,7 @@ namespace wdwmo {
                         _info.adapter.id,
                         source_vid_pn_id,
                         target_vid_pn_id);
+                    }
                 }
             }
 

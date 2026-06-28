@@ -336,10 +336,6 @@ LRESULT CALLBACK keyboard_callback(int nCode, WPARAM wParam, LPARAM lParam) noex
 wdwmo::status_t initialization_callback(const wdwmo::context_t& context) noexcept {
     conlog("[w] " function_name ": callled for %#llx\n", context.call.chain);
 
-#ifdef WDWMO_IMGUI_SINGLE_CONTEXT
-    if (ImGui::GetCurrentContext()) return wdwmo::status_t::success;
-#endif
-
     if (context.info.device && context.info.device_context && !ImGui::GetCurrentContext()) {
         auto imgui_context = ImGui::CreateContext(); {
             ImGui::SetCurrentContext(imgui_context);

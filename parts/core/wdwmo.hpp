@@ -499,7 +499,7 @@ namespace wdwmo {
         void set_console_output(void* handle) noexcept;
         void* get_console_output() noexcept;
         
-        int conlogf(const char* fmt, ...) noexcept;
+		int conlogf(const char* fmt, ...) noexcept;
 		ui64_t conlogfh(ui64_t delay, ui64_t previous, const char* fmt, ...) noexcept;
     }
 }
