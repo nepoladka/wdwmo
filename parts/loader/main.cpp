@@ -90,7 +90,7 @@ wdwmcd::status_t get_configuration(std::string dwmcore_path, std::string dxgi_pa
 		{ .image = {.data = dxgi_file.data(), .size = dxgi_file.size()}, .pdb = {.data = dxgi_pdb.data(), .size = dxgi_pdb.size()} },
 		_result);
 
-	if (auto dwm = ncore::process::get_by_name("dwm"); dwm.alive()) {
+	/*if (auto dwm = ncore::process::get_by_name("dwm"); dwm.alive()) {
 		auto handle = dwm.handle(ncore::__defaultProcessOpenAccess);
 
 		auto status = wdwmcd::experimental::try_detect_runtime_offsets_externally(
@@ -102,7 +102,7 @@ wdwmcd::status_t get_configuration(std::string dwmcore_path, std::string dxgi_pa
 	}
 	else {
 		conlog("[l] can't try experimental features, dwm.exe isn't alive or not found\n");
-	}
+	}*/
 
 	return result;
 }

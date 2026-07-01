@@ -1226,7 +1226,7 @@ namespace wdwmcd {
                 auto output_vftable_offset = configuration.offsets.dxgi_output_vftable;
                 if (!output_vftable_offset) return status_t::invalid_argument_passed;
 
-                auto object_vftables_offsets = std::vector<ui32_t>(); {
+                auto object_vftables = std::map<const char*, collection<ui64_t>>(); {
                     if (PDB::ValidateFile(dwmcore_target.pdb.data, dwmcore_target.pdb.size) != PDB::ErrorCode::Success) return status_t::pdb_parsing_failed;
 
                     auto raw = PDB::CreateRawFile(dwmcore_target.pdb.data);
@@ -1252,20 +1252,12 @@ namespace wdwmcd {
                         std::vector<ui32_t> vftable_rvas{};
                         details::collect_vftable_rvas_by_prefix(raw, dbi, name, vftable_rvas);
 
-                        if (vftable_rvas.empty()) continue;
-
-                        object_vftables_offsets.insert(object_vftables_offsets.end(), vftable_rvas.begin(), vftable_rvas.end());
+                        for (const auto& offset : vftable_rvas) {
+                            object_vftables[name].push_back(dwmcore_module.address<ui64_t>() + offset);
+                        }
                     }
 
-                    if (object_vftables_offsets.empty()) return status_t::symbol_not_found;
-                }
-
-                auto object_vftables_addresses = ncore::collection<ui64_t>(); {
-                    object_vftables_addresses.reserve(object_vftables_offsets.size());
-                }
-
-                for (const auto& offset : object_vftables_offsets) {
-                    object_vftables_addresses.push_back(dwmcore_module.address<ui64_t>() + offset);
+                    if (object_vftables.empty()) return status_t::symbol_not_found;
                 }
 
                 auto output_vftable_address = dxgi_module.address<ui64_t>() + output_vftable_offset;
@@ -1286,9 +1278,22 @@ namespace wdwmcd {
                     if (!process.read_memory(address_t(ui64_t(output_holders.front()) - sizeof(buffer)), sizeof(buffer), buffer)) continue;
 
                     for (i32_t c = sizeofarr(buffer) - 1, i = 0i32; c >= 0; c--, i++) {
-                        if (!object_vftables_addresses.contains(buffer[c])) continue;
+                        const char* contains = nullptr;
 
-                        results.push_back((i + 1) * sizeof(address_t));
+                        for (auto& entry : object_vftables) {
+                            if (!entry.second.contains(buffer[c])) continue;
+
+                            contains = entry.first;
+
+                            break;
+                        }
+
+                        if (!contains) continue;
+
+                        auto offset = (i + 1) * sizeof(address_t);
+                        results.push_back(offset);
+
+                        conlog("[d] " __FUNCTION__ " found offset %#x for %s\n", offset, contains);
 
                         break;
                     }
@@ -1298,9 +1303,7 @@ namespace wdwmcd {
                     conlog("[d] experimental, external runtime offsets detection: can't detect dxgi_output offsets\n");
                 }
                 else {
-                    conlog("[d] experimental, external runtime offsets detection: detected %d dxgi_output offsets, selected: %08x\n", results.size(), results.front());
-
-                    _offset = results.front();
+                    conlog("[d] experimental, external runtime offsets detection: detected %d dxgi_output offsets, selected: %#x\n", results.size(), _offset);
 
                     return status_t::success;
                 }
