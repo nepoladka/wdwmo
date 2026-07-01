@@ -9,8 +9,6 @@
 
 //windows dwm overlay
 namespace wdwmo {
-    using namespace types;
-
     struct status_t {
         enum enum_t : byte_t {
             none = 0,
@@ -155,6 +153,10 @@ namespace wdwmo {
 
 	struct context_t {
 		struct environment_t {
+		protected:
+			void* _private_data = nullptr;
+
+		public:
 			bool reinitialize = false;
 
 			void* output = nullptr;				//IDXGIOutputDWM*

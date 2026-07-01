@@ -65,8 +65,12 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="wdwmcd.hpp" />
-    <ClInclude Include="..\configuration.hpp" />
-    <ClInclude Include="..\types.hpp" />
+    <ClInclude Include="..\types.hpp">
+      <Filter>shared</Filter>
+    </ClInclude>
+    <ClInclude Include="..\configuration.hpp">
+      <Filter>shared</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="includes">
@@ -74,6 +78,9 @@
     </Filter>
     <Filter Include="includes\raw_pdb">
       <UniqueIdentifier>{dc92f86d-19ca-4562-9c04-ba93c7af835c}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="shared">
+      <UniqueIdentifier>{90803b1e-18f0-4d15-8f7a-00b7a52d3742}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
 </Project>

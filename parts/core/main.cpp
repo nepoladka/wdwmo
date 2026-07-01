@@ -391,6 +391,21 @@ wdwmo::status_t render_callback(const wdwmo::context_t& context) noexcept {
 
         ImGui_ImplDX11_NewFrame();
         ImGui_ImplWin32_NewFrame();
+
+        if (context.info.chain_info.buffer.width && context.info.chain_info.buffer.height) {
+            auto& io = ImGui::GetIO();
+
+            io.DisplaySize = {
+                float(context.info.chain_info.buffer.width),
+                float(context.info.chain_info.buffer.height)
+            }; 
+            
+            //you need to add this block if you want to use imgui
+            //because imgui inside 'ImGui_ImplWin32_NewFrame' does
+            //io.DisplaySize = ImVec2((float)(rect.right - rect.left), (float)(rect.bottom - rect.top));
+            //or pass your target window handle on initialization instead of desktop handle
+        }
+
         ImGui::NewFrame();
         {
             ImGui::SetNextWindowBgAlpha(0.65f);

@@ -1,17 +1,21 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
-    <ClInclude Include="wdwmo.hpp" />
     <ClInclude Include="..\..\shared\includes\sources\imgui\imconfig.h">
       <Filter>includes\imgui</Filter>
     </ClInclude>
-    <ClInclude Include="..\types.hpp" />
-    <ClInclude Include="dxgiu.hpp" />
-    <ClInclude Include="..\configuration.hpp" />
+    <ClInclude Include="..\configuration.hpp">
+      <Filter>shared</Filter>
+    </ClInclude>
+    <ClInclude Include="dxgiu.hpp">
+      <Filter>shared</Filter>
+    </ClInclude>
+    <ClInclude Include="..\types.hpp">
+      <Filter>shared</Filter>
+    </ClInclude>
+    <ClInclude Include="wdwmo.hpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="main.cpp" />
-    <ClCompile Include="wdwmo.cpp" />
     <ClCompile Include="..\..\shared\includes\sources\imgui\imgui.cpp">
       <Filter>includes\imgui</Filter>
     </ClCompile>
@@ -30,6 +34,8 @@
     <ClCompile Include="..\..\shared\includes\sources\imgui\imgui_widgets.cpp">
       <Filter>includes\imgui</Filter>
     </ClCompile>
+    <ClCompile Include="main.cpp" />
+    <ClCompile Include="wdwmo.cpp" />
   </ItemGroup>
   <ItemGroup>
     <Filter Include="includes">
@@ -37,6 +43,9 @@
     </Filter>
     <Filter Include="includes\imgui">
       <UniqueIdentifier>{c50b9c8e-a5e4-4cd6-987c-64e0366c2e09}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="shared">
+      <UniqueIdentifier>{a14e57bb-0113-4fee-ad2d-5b99c181b9cc}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
 </Project>
