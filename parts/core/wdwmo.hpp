@@ -104,7 +104,7 @@ namespace wdwmo {
 
 		rect_t rect = { };
 		float scale[2] = { };
-		ui32_t rotation = { }; //DISPLAYCONFIG_ROTATION / DXGI_MODE_ROTATION
+		ui32_t rotation = { }; //DISPLAYCONFIG_ROTATION
 		ui32_t output_technology = { }; //DISPLAYCONFIG_VIDEO_OUTPUT_TECHNOLOGY
 
 		std::string monitor_path = { };
@@ -142,8 +142,6 @@ namespace wdwmo {
 	};
 
 	struct chain_info_t {
-		ui32_t vid_pn_id = { };
-
 		adapter_info_t adapter = { };
 
 		struct {
@@ -151,6 +149,7 @@ namespace wdwmo {
 			ui32_t format = { };
 		}buffer = { };
 
+		ui32_t dxgi_output_rotation = { }; //DXGI_MODE_ROTATION
 		output_display_info_t output_display = { };
 	};
 

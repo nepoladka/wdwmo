@@ -42,7 +42,6 @@
 #define conlogh(...)
 #endif
 
-
 namespace wdwmo {
     using namespace ncore::types;
 
@@ -336,6 +335,57 @@ namespace wdwmo {
             return false;
         }
 
+        bool get_output_display_path_info(
+            chain_info_t& _info, 
+            const luid_t& adapter_id, 
+            ui32_t source_id, 
+            ui32_t target_id) {
+            constexpr ui32_t __flags = QDC_ALL_PATHS; //not QDC_ONLY_ACTIVE_PATHS for duplicate mode supportion
+
+            auto path_count = ui32_t();
+            auto mode_count = ui32_t();
+
+            auto paths = std::vector<DISPLAYCONFIG_PATH_INFO>();
+            auto modes = std::vector<DISPLAYCONFIG_MODE_INFO>();
+
+            auto result = LONG(ERROR_SUCCESS);
+
+            //QueryDisplayConfig config can be changed between requests
+            do {
+                result = GetDisplayConfigBufferSizes(__flags, &path_count, &mode_count);
+                if (result != ERROR_SUCCESS) return false;
+
+                paths.resize(path_count);
+                modes.resize(mode_count);
+
+                result = QueryDisplayConfig(__flags,
+                    &path_count, paths.data(),
+                    &mode_count, modes.data(),
+                    nullptr);
+            } while (result == ERROR_INSUFFICIENT_BUFFER);
+
+            if (result != ERROR_SUCCESS) return false;
+
+            for (auto i = 0ui32; i < path_count; ++i) {
+                const auto& path = paths[i];
+                const auto& target = path.targetInfo;
+                const auto& source = path.sourceInfo;
+
+                if (!target.targetAvailable || 
+                    *ui64_p(&adapter_id) != *ui64_p(&source.adapterId) ||
+                    *ui64_p(&adapter_id) != *ui64_p(&target.adapterId) ||
+                    source.id != source_id || 
+                    target.id != target_id) continue;
+
+                _info.output_display.output_technology = target.outputTechnology;
+                _info.output_display.rotation = target.rotation;
+
+                return true;
+            }
+
+            return false;
+        }
+
         bool get_output_display_info(
             chain_info_t& _info,
             HMONITOR monitor,
@@ -385,8 +435,9 @@ namespace wdwmo {
 
             memcpy(_info.output_display.scale, get_monitor_scale(monitor).array, sizeof(vec2f));
 
-            //.rotation = ui32_t(target.rotation),
-            //.output_technology = ui32_t(target.outputTechnology),
+            if (!get_output_display_path_info(_info, adapter_id, source_vid_pn_id, target_vid_pn_id)) {
+                _info.output_display.output_technology = target_name.outputTechnology;
+            }
 
             _info.output_display.monitor_path = monitor_path.string();
             _info.output_display.gdi_name = gdi_name.string();
@@ -426,16 +477,14 @@ namespace wdwmo {
 
                     if (output) {
                         auto monitor = HMONITOR();
-                        //auto gdi_name = std::wstring();
                         auto source_vid_pn_id = ui32_t();
                         auto target_vid_pn_id = ui32_t();
 
                         if (auto dxgi_output = CComPtr<IDXGIOutput>(); SUCCEEDED(output->QueryInterface(IID_PPV_ARGS(&dxgi_output)))) {
                             if (auto description = DXGI_OUTPUT_DESC(); SUCCEEDED(dxgi_output->GetDesc(&description))) {
-                                //gdi_name = description.DeviceName;
                                 monitor = description.Monitor;
 
-                                _info.output_display.rotation = ui32_t(description.Rotation);
+                                _info.dxgi_output_rotation = ui32_t(description.Rotation);
                             }
                         }
 
@@ -460,22 +509,22 @@ namespace wdwmo {
                                 conlog(
                                     "[w] " function_name ": diagnostic description info:\n"
                                     "    output target: %#llx\n"
-                                    "    result:        %08x\n" 
+                                    "    result:        %08x\n"
                                     "    store buffer:  %#llx\n"
                                     "    encoded:       %s\n",
-                                    output, 
-                                    result, 
-                                    description, 
+                                    output,
+                                    result,
+                                    description,
                                     encoded.c_str());
                             }
                         }
 
-                    get_output_display_info(
-                        _info,
-                        monitor,
-                        _info.adapter.id,
-                        source_vid_pn_id,
-                        target_vid_pn_id);
+                        get_output_display_info(
+                            _info,
+                            monitor,
+                            _info.adapter.id,
+                            source_vid_pn_id,
+                            target_vid_pn_id);
                     }
                 }
             }
@@ -640,6 +689,7 @@ namespace wdwmo {
             "    device:         %#llx\n"
             "    device context: %#llx\n"
             "    output:         %#llx (%#lx)\n"
+            "    configuration:  %d (%d) | %d\n"
             "    rect:           %d,%d -> %d,%d\n"
             "    monitor:        %#016x | %s | %s\n"
             "    adapter:        %08x:%08x\n"
@@ -653,6 +703,7 @@ namespace wdwmo {
             device,
             device_context,
             output, configuration.offsets.dxgi_output,
+            info.output_display.rotation, info.dxgi_output_rotation, info.output_display.output_technology,
             info.output_display.rect.left, info.output_display.rect.top, info.output_display.rect.right, info.output_display.rect.bottom,
             info.output_display.handle, info.output_display.gdi_name.empty() ? "" : info.output_display.gdi_name.c_str(), info.output_display.monitor_path.empty() ? "" : info.output_display.monitor_path.c_str(),
             info.adapter.id.high, info.adapter.id.low,
