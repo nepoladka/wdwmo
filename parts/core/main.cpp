@@ -282,7 +282,7 @@ LPARAM translate_keyboard_lparam(WPARAM message, const KBDLLHOOKSTRUCT* info) no
 LRESULT CALLBACK mouse_callback(int nCode, WPARAM wParam, LPARAM lParam) noexcept {
     const auto info = (MSLLHOOKSTRUCT*)lParam;
 
-    if (ImGui::GetCurrentContext()) {
+    if (ImGui::GetCurrentContext()) { //at least one imgui context exist
         auto monitor = MonitorFromPoint(info->pt, MONITOR_DEFAULTTONEAREST);
         auto scale = wdwmo::utils::get_monitor_scale(monitor);
         auto rect = wdwmo::utils::get_monitor_rect(monitor);
@@ -295,10 +295,8 @@ LRESULT CALLBACK mouse_callback(int nCode, WPARAM wParam, LPARAM lParam) noexcep
         ImGui_ImplWin32_WndProcHandler(
             GetDesktopWindow(),
             UINT(wParam),
-            wparam,  //info->flags,
-            lparam); //MAKELPARAM(info->pt.x, info->pt.y));
-        
-        //if (ImGui::GetIO().WantCaptureMouse && wParam != WM_MOUSEMOVE) return -1;
+            wparam,
+            lparam);
     }
 
     return CallNextHookEx(nullptr, nCode, wParam, lParam);
@@ -307,17 +305,15 @@ LRESULT CALLBACK mouse_callback(int nCode, WPARAM wParam, LPARAM lParam) noexcep
 LRESULT CALLBACK keyboard_callback(int nCode, WPARAM wParam, LPARAM lParam) noexcept {
     const auto info = (KBDLLHOOKSTRUCT*)lParam;
 
-    if (ImGui::GetCurrentContext()) {
+    if (ImGui::GetCurrentContext()) { //at least one imgui context exist
         const auto wparam = info->vkCode;
         const auto lparam = translate_keyboard_lparam(wParam, info);
 
         ImGui_ImplWin32_WndProcHandler(
             GetDesktopWindow(),
             UINT(wParam),
-            wparam,  //info->vkCode,
-            lparam); //info->scanCode);
-
-        //if (ImGui::GetIO().WantCaptureKeyboard) return -1;
+            wparam,
+            lparam);
     }
 
     if (info->vkCode == __actionMajorKey) {
@@ -336,7 +332,7 @@ LRESULT CALLBACK keyboard_callback(int nCode, WPARAM wParam, LPARAM lParam) noex
 wdwmo::status_t initialization_callback(const wdwmo::context_t& context) noexcept {
     conlog("[w] " function_name ": callled for %#llx\n", context.call.chain);
 
-    if (context.info.device && context.info.device_context && !ImGui::GetCurrentContext()) {
+    if (context.info.device && context.info.device_context) {
         auto imgui_context = ImGui::CreateContext(); {
             ImGui::SetCurrentContext(imgui_context);
         }
@@ -356,6 +352,10 @@ wdwmo::status_t initialization_callback(const wdwmo::context_t& context) noexcep
             imgui_context,
             win32_result,
             dx11_result);
+
+        if (win32_result && dx11_result) {
+            context.info.linked_pool[__cstrh("imgui_context")] = ui64_t(imgui_context);
+        }
     }
 
     return wdwmo::status_t::success;
@@ -371,7 +371,15 @@ wdwmo::status_t render_callback(const wdwmo::context_t& context) noexcept {
 
     const auto header_color = ImGui::ColorConvertU32ToFloat4(0xffdfdf3f); //abgr
 
-    auto imgui_context = ImGui::GetCurrentContext();
+    auto imgui_context = (ImGuiContext*)nullptr;
+    if (const auto& it = context.info.linked_pool.find(__cstrh("imgui_context")); it != context.info.linked_pool.end()) {
+        imgui_context = (ImGuiContext*)it->second; 
+    }
+
+    if (!imgui_context) {
+        imgui_context = ImGui::GetCurrentContext();
+    }
+
     auto thread_id = __thread_id;
 
     auto relative_position = vec2i32();
