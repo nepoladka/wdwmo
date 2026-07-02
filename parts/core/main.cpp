@@ -332,7 +332,7 @@ LRESULT CALLBACK keyboard_callback(int nCode, WPARAM wParam, LPARAM lParam) noex
 wdwmo::status_t initialization_callback(const wdwmo::context_t& context) noexcept {
     conlog("[w] " function_name ": callled for %#llx\n", context.call.chain);
 
-    if (context.info.device && context.info.device_context) {
+    if (context.info.device && context.info.device_context && !ImGui::GetCurrentContext()) {
         auto imgui_context = ImGui::CreateContext(); {
             ImGui::SetCurrentContext(imgui_context);
         }
@@ -372,9 +372,9 @@ wdwmo::status_t render_callback(const wdwmo::context_t& context) noexcept {
     const auto header_color = ImGui::ColorConvertU32ToFloat4(0xffdfdf3f); //abgr
 
     auto imgui_context = (ImGuiContext*)nullptr;
-    if (const auto& it = context.info.linked_pool.find(__cstrh("imgui_context")); it != context.info.linked_pool.end()) {
-        imgui_context = (ImGuiContext*)it->second; 
-    }
+    //if (const auto& it = context.info.linked_pool.find(__cstrh("imgui_context")); it != context.info.linked_pool.end()) {
+    //    imgui_context = (ImGuiContext*)it->second; 
+    //}
 
     if (!imgui_context) {
         imgui_context = ImGui::GetCurrentContext();

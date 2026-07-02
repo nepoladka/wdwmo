@@ -141,6 +141,13 @@ namespace wdwmo {
     }
 
     namespace utils {
+        __forceinline void release_dxany(auto*& instance) noexcept {
+            if (instance) {
+                instance->Release();
+                instance = nullptr;
+            }
+        }
+
         __forceinline bool get_pe_info(const void* data, size_t size, executable_image_info_t& _info) noexcept {
             if (size < sizeof(IMAGE_DOS_HEADER)) return false;
 
@@ -201,7 +208,7 @@ namespace wdwmo {
 
             return GetMonitorInfoA((HMONITOR)monitor, &info) && (info.dwFlags & MONITORINFOF_PRIMARY) != 0;
         }
-
+        
         rect_t get_monitor_rect(void* monitor, bool work) noexcept {
             if (!monitor) {
                 monitor = MonitorFromPoint({ .x = 0, .y = 0 }, MONITOR_DEFAULTTOPRIMARY);
@@ -227,38 +234,42 @@ namespace wdwmo {
         using namespace utils;
 
 
-        static constexpr const char hlsl_rotation_shader_vertex[] = R"(
-            struct VSInput {
+        static constexpr const char __hlslRotationShaderVertex[] = { R"(
+            struct vsi {
                 float2 pos : POSITION;
                 float2 uv  : TEXCOORD0;
             };
 
-            struct PSInput {
+            struct psi {
                 float4 pos : SV_POSITION;
                 float2 uv  : TEXCOORD0;
             };
 
-            PSInput vs_main(VSInput input) {
-                PSInput output;
-                output.pos = float4(input.pos, 0.0f, 1.0f);
-                output.uv = input.uv;
-                return output;
+            psi m(vsi i) {
+                psi o;
+                o.pos = float4(i.pos, 0.0f, 1.0f);
+                o.uv = i.uv;
+                return o;
             }
-        )";
+        )" };
 
-        static constexpr const char hlsl_rotation_shader_pixel[] = R"(
-            Texture2D overlay_texture : register(t0);
-            SamplerState overlay_sampler : register(s0);
+        static constexpr const char __hlslRotationShaderPixel[] = { R"(
+            Texture2D ot : register(t0);
+            SamplerState os : register(s0);
 
-            struct PSInput {
+            struct psi {
                 float4 pos : SV_POSITION;
                 float2 uv  : TEXCOORD0;
             };
 
-            float4 ps_main(PSInput input) : SV_TARGET {
-                return overlay_texture.Sample(overlay_sampler, input.uv);
+            float4 m(psi i) : SV_TARGET {
+                return ot.Sample(os, i.uv);
             }
-        )";
+        )" };
+
+
+        static ID3DBlob* rotation_shader_blob_vertex = nullptr;
+        static ID3DBlob* rotation_shader_blob_pixel = nullptr;
 
 
         struct offscreen_view_t {
@@ -269,6 +280,16 @@ namespace wdwmo {
             UINT width = 0;   // callback/upright width
             UINT height = 0;  // callback/upright height
             DXGI_FORMAT format = DXGI_FORMAT_UNKNOWN;
+
+            __forceinline void release() noexcept {
+                release_dxany(shader_resource_view);
+                release_dxany(render_target_view);
+                release_dxany(texture);
+
+                width = 0;
+                height = 0;
+                format = DXGI_FORMAT_UNKNOWN;
+            }
         };
 
         struct final_view_t {
@@ -282,6 +303,29 @@ namespace wdwmo {
             UINT height = 0; // native DWM buffer height
             DXGI_FORMAT format = DXGI_FORMAT_UNKNOWN;
             DXGI_MODE_ROTATION rotation = DXGI_MODE_ROTATION_UNSPECIFIED;
+
+            __forceinline void release() noexcept {
+                if (render_target_view_referenced) {
+                    release_dxany(render_target_view);
+                }
+                else {
+                    render_target_view = nullptr;
+                }
+
+                if (texture_referenced) {
+                    release_dxany(texture);
+                }
+                else {
+                    texture = nullptr;
+                }
+
+                texture_referenced = false;
+                render_target_view_referenced = false;
+                width = 0;
+                height = 0;
+                format = DXGI_FORMAT_UNKNOWN;
+                rotation = DXGI_MODE_ROTATION_UNSPECIFIED;
+            }
         };
 
         struct composite_vertex_t {
@@ -301,30 +345,63 @@ namespace wdwmo {
             ID3D11BlendState* blend = nullptr;
             ID3D11RasterizerState* rasterizer = nullptr;
             ID3D11DepthStencilState* depth_stencil = nullptr;
+
+            __forceinline void release() noexcept {
+                release_dxany(depth_stencil);
+                release_dxany(rasterizer);
+                release_dxany(blend);
+                release_dxany(sampler);
+                release_dxany(index_buffer);
+                release_dxany(vertex_buffer);
+                release_dxany(input_layout);
+                release_dxany(pixel_shader);
+                release_dxany(vertex_shader);
+            }
         };
 
-        struct private_context_data_t {
+        struct composite_state_backup_t {
+            ID3D11InputLayout* input_layout = nullptr;
+            ID3D11Buffer* vertex_buffer = nullptr;
+            UINT vertex_stride = 0;
+            UINT vertex_offset = 0;
+            ID3D11Buffer* index_buffer = nullptr;
+            DXGI_FORMAT index_format = DXGI_FORMAT_UNKNOWN;
+            UINT index_offset = 0;
+            D3D11_PRIMITIVE_TOPOLOGY topology = D3D11_PRIMITIVE_TOPOLOGY_UNDEFINED;
+
+            ID3D11VertexShader* vertex_shader = nullptr;
+            ID3D11PixelShader* pixel_shader = nullptr;
+            ID3D11GeometryShader* geometry_shader = nullptr;
+            ID3D11HullShader* hull_shader = nullptr;
+            ID3D11DomainShader* domain_shader = nullptr;
+
+            ID3D11ShaderResourceView* pixel_shader_shader_resource_view = nullptr;
+            ID3D11SamplerState* pixel_shader_sampler = nullptr;
+
+            ID3D11BlendState* blend = nullptr;
+            FLOAT blend_factor[4] = { };
+            UINT sample_mask = 0xffffffff;
+            ID3D11DepthStencilState* depth_stencil = nullptr;
+            UINT stencil_ref = 0;
+
+            ID3D11RasterizerState* rasterizer = nullptr;
+            D3D11_VIEWPORT viewports[D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE] = { };
+            UINT viewport_count = D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE;
+            RECT scissor_rects[D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE] = { };
+            UINT scissor_count = D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE;
+        };
+
+        struct private_data_t {
             offscreen_view_t offscreen_view;
             final_view_t final_view;
             composite_pipeline_t composite_pipeline;
+
+            __forceinline void release() noexcept {
+                composite_pipeline.release();
+                offscreen_view.release();
+                final_view.release();
+            }
         };
-
-
-        template<typename _t = private_context_data_t>
-        __forceinline _t*& get_private_data(context_t::environment_t* info) noexcept {
-            struct accessor_t : public context_t::environment_t {
-                __forceinline static void** get(context_t::environment_t* info) noexcept {
-                    return &(((accessor_t*)info)->_private_data);
-                }
-            };
-
-            return *(_t**)accessor_t::get(info);
-        }
-
-        template<typename _t = private_context_data_t>
-        __forceinline _t*& get_private_data(context_t::environment_t& info) noexcept {
-            return get_private_data<_t>(&info);
-        }
 
 
         IDXGISwapChainDWMLegacy* retrieve_dxgi_swap_chain(const i32_t struct_offset, void* swap_chain, const range<address_t>* dxgi_module_bounds = nullptr) noexcept {
@@ -401,7 +478,6 @@ namespace wdwmo {
 
             return nullptr;
         }
-
 
         void get_buffer_info(chain_info_t& _info, ID3D11Texture2D* buffer) noexcept {
             auto description = D3D11_TEXTURE2D_DESC(); {
@@ -636,149 +712,21 @@ namespace wdwmo {
         }
 
 
-        __forceinline void safe_release(IUnknown*& instance) noexcept {
-            if (instance) {
-                instance->Release();
-                instance = nullptr;
-            }
+        __forceinline private_data_t*& get_private_data(context_t::environment_t* info) noexcept {
+            struct accessor_t : public context_t::environment_t {
+                __forceinline static void** get(context_t::environment_t* info) noexcept {
+                    return &(((accessor_t*)info)->_private_data);
+                }
+            };
+
+            return *(private_data_t**)accessor_t::get(info);
         }
 
-        template<typename _t>
-        __forceinline void safe_release(_t*& instance) noexcept {
-            auto unknown = (IUnknown*)instance;
-            safe_release(unknown);
-            instance = nullptr;
+        __forceinline private_data_t*& get_private_data(context_t::environment_t& info) noexcept {
+            return get_private_data(&info);
         }
 
-        void release_offscreen_view(offscreen_view_t& view) noexcept {
-            safe_release(view.shader_resource_view);
-            safe_release(view.render_target_view);
-            safe_release(view.texture);
-
-            view.width = 0;
-            view.height = 0;
-            view.format = DXGI_FORMAT_UNKNOWN;
-        }
-
-        void release_final_view(final_view_t& view) noexcept {
-            if (view.render_target_view_referenced) {
-                safe_release(view.render_target_view);
-            }
-            else {
-                view.render_target_view = nullptr;
-            }
-
-            if (view.texture_referenced) {
-                safe_release(view.texture);
-            }
-            else {
-                view.texture = nullptr;
-            }
-
-            view.texture_referenced = false;
-            view.render_target_view_referenced = false;
-            view.width = 0;
-            view.height = 0;
-            view.format = DXGI_FORMAT_UNKNOWN;
-            view.rotation = DXGI_MODE_ROTATION_UNSPECIFIED;
-        }
-
-        void release_composite_pipeline(composite_pipeline_t& pipeline) noexcept {
-            safe_release(pipeline.depth_stencil);
-            safe_release(pipeline.rasterizer);
-            safe_release(pipeline.blend);
-            safe_release(pipeline.sampler);
-            safe_release(pipeline.index_buffer);
-            safe_release(pipeline.vertex_buffer);
-            safe_release(pipeline.input_layout);
-            safe_release(pipeline.pixel_shader);
-            safe_release(pipeline.vertex_shader);
-        }
-
-        void release_private_context_data(private_context_data_t*& data) noexcept {
-            if (!data) return;
-
-            release_composite_pipeline(data->composite_pipeline);
-            release_offscreen_view(data->offscreen_view);
-            release_final_view(data->final_view);
-
-            delete data;
-            data = nullptr;
-        }
-
-        bool create_offscreen_texture(
-            ID3D11Device* device,
-            UINT width,
-            UINT height,
-            DXGI_FORMAT format,
-            offscreen_view_t& out) noexcept {
-            release_offscreen_view(out);
-
-            if (!device || width == 0 || height == 0 || format == DXGI_FORMAT_UNKNOWN) return false;
-
-            D3D11_TEXTURE2D_DESC desc{};
-            desc.Width = width;
-            desc.Height = height;
-            desc.MipLevels = 1;
-            desc.ArraySize = 1;
-            desc.Format = format;
-            desc.SampleDesc.Count = 1;
-            desc.SampleDesc.Quality = 0;
-            desc.Usage = D3D11_USAGE_DEFAULT;
-            desc.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
-            desc.CPUAccessFlags = 0;
-            desc.MiscFlags = 0;
-
-            auto texture = (ID3D11Texture2D*)nullptr;
-            if (FAILED(device->CreateTexture2D(&desc, nullptr, &texture)) || !texture) return false;
-
-            auto render_target_view = (ID3D11RenderTargetView*)nullptr;
-            if (FAILED(device->CreateRenderTargetView(texture, nullptr, &render_target_view)) || !render_target_view) {
-                texture->Release();
-
-                return false;
-            }
-
-            auto shader_resource_view = (ID3D11ShaderResourceView*)nullptr;
-            if (FAILED(device->CreateShaderResourceView(texture, nullptr, &shader_resource_view)) || !shader_resource_view) {
-                render_target_view->Release();
-                
-                texture->Release();
-
-                return false;
-            }
-
-            out.texture = texture;
-            out.render_target_view = render_target_view;
-            out.shader_resource_view = shader_resource_view;
-            out.width = width;
-            out.height = height;
-            out.format = format;
-
-            return true;
-        }
-
-        void cleanup_view(ID3D11DeviceContext* context, const offscreen_view_t& view) noexcept {
-            if (!context || !view.render_target_view || view.width == 0 || view.height == 0) return;
-
-            auto target = view.render_target_view;
-            context->OMSetRenderTargets(1, &target, nullptr);
-
-            D3D11_VIEWPORT viewport{};
-            viewport.TopLeftX = 0.0f;
-            viewport.TopLeftY = 0.0f;
-            viewport.Width = float(view.width);
-            viewport.Height = float(view.height);
-            viewport.MinDepth = 0.0f;
-            viewport.MaxDepth = 1.0f;
-
-            context->RSSetViewports(1, &viewport);
-
-            const float transparent[] = { 0.0f, 0.0f, 0.0f, 0.0f };
-            context->ClearRenderTargetView(view.render_target_view, transparent);
-        }
-
-        void get_rotation_uv(DXGI_MODE_ROTATION rotation, float uv[4][2]) noexcept {
+        __forceinline constexpr void get_rotation_uv(DXGI_MODE_ROTATION rotation, float uv[4][2]) noexcept {
             switch (rotation) {
             default:
                 // TL, TR, BL, BR
@@ -811,176 +759,8 @@ namespace wdwmo {
             }
         }
 
-        bool create_composite_quad(ID3D11Device* device,composite_pipeline_t& pipeline) noexcept {
-            composite_vertex_t vertices[4] = {
-                { { -1.0f,  1.0f }, { 0.0f, 0.0f } }, // TL
-                { {  1.0f,  1.0f }, { 1.0f, 0.0f } }, // TR
-                { { -1.0f, -1.0f }, { 0.0f, 1.0f } }, // BL
-                { {  1.0f, -1.0f }, { 1.0f, 1.0f } }, // BR
-            };
-
-            const ui16_t indices[6] = {
-                0, 1, 2,
-                2, 1, 3
-            };
-
-            D3D11_BUFFER_DESC vb_desc{};
-            vb_desc.ByteWidth = sizeof(vertices);
-            vb_desc.Usage = D3D11_USAGE_DYNAMIC;
-            vb_desc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
-            vb_desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
-
-            D3D11_SUBRESOURCE_DATA vb_data{};
-            vb_data.pSysMem = vertices;
-
-            if (FAILED(device->CreateBuffer(&vb_desc, &vb_data, &pipeline.vertex_buffer)))return false;
-
-            D3D11_BUFFER_DESC ib_desc{};
-            ib_desc.ByteWidth = sizeof(indices);
-            ib_desc.Usage = D3D11_USAGE_IMMUTABLE;
-            ib_desc.BindFlags = D3D11_BIND_INDEX_BUFFER;
-
-            D3D11_SUBRESOURCE_DATA ib_data{};
-            ib_data.pSysMem = indices;
-
-            if (FAILED(device->CreateBuffer(&ib_desc, &ib_data, &pipeline.index_buffer)))return false;
-
-            return true;
-        }
-
-        bool create_composite_blend_state(
-            ID3D11Device* device,
-            ID3D11BlendState*& blend) noexcept {
-            D3D11_BLEND_DESC desc{};
-            auto& rt = desc.RenderTarget[0];
-
-            rt.BlendEnable = TRUE;
-            rt.SrcBlend = D3D11_BLEND_ONE;
-            rt.DestBlend = D3D11_BLEND_INV_SRC_ALPHA;
-            rt.BlendOp = D3D11_BLEND_OP_ADD;
-            rt.SrcBlendAlpha = D3D11_BLEND_ONE;
-            rt.DestBlendAlpha = D3D11_BLEND_INV_SRC_ALPHA;
-            rt.BlendOpAlpha = D3D11_BLEND_OP_ADD;
-            rt.RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
-
-            return SUCCEEDED(device->CreateBlendState(&desc, &blend)) && blend;
-        }
-
-        bool create_composite_pipeline(ID3D11Device* device,composite_pipeline_t& pipeline) noexcept {
-            release_composite_pipeline(pipeline);
-
-            if (!device)return false;
-
-            auto result = false;
-            auto vertex_shader_blob = (ID3DBlob*)nullptr;
-            auto pixel_shader_blob = (ID3DBlob*)nullptr;
-            auto error_blob = (ID3DBlob*)nullptr;
-
-            do {
-                constexpr auto flags = D3DCOMPILE_ENABLE_STRICTNESS;
-
-                if (FAILED(D3DCompile(
-                    hlsl_rotation_shader_vertex,
-                    sizeof(hlsl_rotation_shader_vertex) - 1,
-                    nullptr,
-                    nullptr,
-                    nullptr,
-                    "vs_main",
-                    "vs_4_0",
-                    flags,
-                    0,
-                    &vertex_shader_blob,
-                    &error_blob)) || !vertex_shader_blob) break;
-
-                safe_release(error_blob);
-
-                if (FAILED(D3DCompile(
-                    hlsl_rotation_shader_pixel,
-                    sizeof(hlsl_rotation_shader_pixel) - 1,
-                    nullptr,
-                    nullptr,
-                    nullptr,
-                    "ps_main",
-                    "ps_4_0",
-                    flags,
-                    0,
-                    &pixel_shader_blob,
-                    &error_blob)) || !pixel_shader_blob) break;
-
-                if (FAILED(device->CreateVertexShader(
-                    vertex_shader_blob->GetBufferPointer(),
-                    vertex_shader_blob->GetBufferSize(),
-                    nullptr,
-                    &pipeline.vertex_shader)) || !pipeline.vertex_shader) break;
-
-                if (FAILED(device->CreatePixelShader(
-                    pixel_shader_blob->GetBufferPointer(),
-                    pixel_shader_blob->GetBufferSize(),
-                    nullptr,
-                    &pipeline.pixel_shader)) || !pipeline.pixel_shader) break;
-
-                D3D11_INPUT_ELEMENT_DESC input_elements[] = {
-                    { "POSITION", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0 },
-                    { "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, sizeof(float) * 2, D3D11_INPUT_PER_VERTEX_DATA, 0 }
-                };
-
-                if (FAILED(device->CreateInputLayout(
-                    input_elements,
-                    ARRAYSIZE(input_elements),
-                    vertex_shader_blob->GetBufferPointer(),
-                    vertex_shader_blob->GetBufferSize(),
-                    &pipeline.input_layout)) || !pipeline.input_layout) break;
-
-                D3D11_SAMPLER_DESC sampler_desc{};
-                sampler_desc.Filter = D3D11_FILTER_MIN_MAG_MIP_POINT;
-                sampler_desc.AddressU = D3D11_TEXTURE_ADDRESS_CLAMP;
-                sampler_desc.AddressV = D3D11_TEXTURE_ADDRESS_CLAMP;
-                sampler_desc.AddressW = D3D11_TEXTURE_ADDRESS_CLAMP;
-                sampler_desc.ComparisonFunc = D3D11_COMPARISON_ALWAYS;
-                sampler_desc.MinLOD = 0.0f;
-                sampler_desc.MaxLOD = D3D11_FLOAT32_MAX;
-
-                if (FAILED(device->CreateSamplerState(&sampler_desc, &pipeline.sampler)) || !pipeline.sampler) break;
-
-                if (!create_composite_blend_state(device, pipeline.blend)) break;
-
-                D3D11_RASTERIZER_DESC rasterizer_desc{};
-                rasterizer_desc.FillMode = D3D11_FILL_SOLID;
-                rasterizer_desc.CullMode = D3D11_CULL_NONE;
-                rasterizer_desc.DepthClipEnable = FALSE;
-                rasterizer_desc.ScissorEnable = FALSE;
-
-                if (FAILED(device->CreateRasterizerState(&rasterizer_desc, &pipeline.rasterizer)) || !pipeline.rasterizer) break;
-
-                D3D11_DEPTH_STENCIL_DESC depth_desc{};
-                depth_desc.DepthEnable = FALSE;
-                depth_desc.DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ZERO;
-                depth_desc.DepthFunc = D3D11_COMPARISON_ALWAYS;
-                depth_desc.StencilEnable = FALSE;
-
-                if (FAILED(device->CreateDepthStencilState(&depth_desc, &pipeline.depth_stencil)) || !pipeline.depth_stencil) break;
-
-                if (!create_composite_quad(device, pipeline)) break;
-
-                result = true;
-            } while (false);
-
-            safe_release(error_blob);
-            safe_release(pixel_shader_blob);
-            safe_release(vertex_shader_blob);
-
-            if (!result) release_composite_pipeline(pipeline);
-
-            return result;
-        }
-
-        bool update_quad_uv(
-            ID3D11DeviceContext* context,
-            ID3D11Buffer* vertex_buffer,
-            DXGI_MODE_ROTATION rotation) noexcept {
-            if (!context || !vertex_buffer)return false;
-
-            float uv[4][2]{};
+        __forceinline bool update_quad_uv(ID3D11DeviceContext* context, ID3D11Buffer* vertex_buffer, DXGI_MODE_ROTATION rotation) noexcept {
+            float uv[4][2] = { };
             get_rotation_uv(rotation, uv);
 
             composite_vertex_t vertices[4] = {
@@ -990,8 +770,8 @@ namespace wdwmo {
                 { {  1.0f, -1.0f }, { uv[3][0], uv[3][1] } },
             };
 
-            D3D11_MAPPED_SUBRESOURCE mapped{};
-            if (FAILED(context->Map(vertex_buffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped)))return false;
+            D3D11_MAPPED_SUBRESOURCE mapped = { };
+            if (FAILED(context->Map(vertex_buffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped))) return false;
 
             memcpy(mapped.pData, vertices, sizeof(vertices));
             context->Unmap(vertex_buffer, 0);
@@ -999,66 +779,65 @@ namespace wdwmo {
             return true;
         }
 
-        struct composite_state_backup_t {
-            ID3D11InputLayout* input_layout = nullptr;
-            ID3D11Buffer* vertex_buffer = nullptr;
-            UINT vertex_stride = 0;
-            UINT vertex_offset = 0;
-            ID3D11Buffer* index_buffer = nullptr;
-            DXGI_FORMAT index_format = DXGI_FORMAT_UNKNOWN;
-            UINT index_offset = 0;
-            D3D11_PRIMITIVE_TOPOLOGY topology = D3D11_PRIMITIVE_TOPOLOGY_UNDEFINED;
-
-            ID3D11VertexShader* vertex_shader = nullptr;
-            ID3D11PixelShader* pixel_shader = nullptr;
-            ID3D11GeometryShader* geometry_shader = nullptr;
-            ID3D11HullShader* hull_shader = nullptr;
-            ID3D11DomainShader* domain_shader = nullptr;
-
-            ID3D11ShaderResourceView* pixel_shader_shader_resource_view = nullptr;
-            ID3D11SamplerState* pixel_shader_sampler = nullptr;
-
-            ID3D11BlendState* blend = nullptr;
-            FLOAT blend_factor[4] = { };
-            UINT sample_mask = 0xffffffff;
-            ID3D11DepthStencilState* depth_stencil = nullptr;
-            UINT stencil_ref = 0;
-
-            ID3D11RasterizerState* rasterizer = nullptr;
-            D3D11_VIEWPORT viewports[D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE] = { };
-            UINT viewport_count = D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE;
-            RECT scissor_rects[D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE] = { };
-            UINT scissor_count = D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE;
-        };
-
-        void backup_composite_state(
-            ID3D11DeviceContext* context,
-            composite_state_backup_t& state) noexcept {
-            context->IAGetInputLayout(&state.input_layout);
-            context->IAGetVertexBuffers(0, 1, &state.vertex_buffer, &state.vertex_stride, &state.vertex_offset);
-            context->IAGetIndexBuffer(&state.index_buffer, &state.index_format, &state.index_offset);
-            context->IAGetPrimitiveTopology(&state.topology);
-
-            context->VSGetShader(&state.vertex_shader, nullptr, nullptr);
-            context->PSGetShader(&state.pixel_shader, nullptr, nullptr);
-            context->GSGetShader(&state.geometry_shader, nullptr, nullptr);
-            context->HSGetShader(&state.hull_shader, nullptr, nullptr);
-            context->DSGetShader(&state.domain_shader, nullptr, nullptr);
-
-            context->PSGetShaderResources(0, 1, &state.pixel_shader_shader_resource_view);
-            context->PSGetSamplers(0, 1, &state.pixel_shader_sampler);
-
-            context->OMGetBlendState(&state.blend, state.blend_factor, &state.sample_mask);
-            context->OMGetDepthStencilState(&state.depth_stencil, &state.stencil_ref);
-
-            context->RSGetState(&state.rasterizer);
-            context->RSGetViewports(&state.viewport_count, state.viewports);
-            context->RSGetScissorRects(&state.scissor_count, state.scissor_rects);
+        __forceinline void get_offscreen_size(const chain_info_t& info, DXGI_MODE_ROTATION rotation, ui32_t& _width, ui32_t& _height) noexcept {
+            if (rotation == DXGI_MODE_ROTATION_ROTATE90 || rotation == DXGI_MODE_ROTATION_ROTATE270) {
+                _width = info.buffer.height;
+                _height = info.buffer.width;
+            }
+            else {
+                _width = info.buffer.width;
+                _height = info.buffer.height;
+            }
         }
 
-        void restore_composite_state(
-            ID3D11DeviceContext* context,
-            composite_state_backup_t& state) noexcept {
+        __forceinline void cleanup_view(ID3D11DeviceContext* context, const offscreen_view_t& view) noexcept {
+            if (!context || !view.render_target_view || view.width == 0 || view.height == 0) return;
+
+            auto target = view.render_target_view;
+            context->OMSetRenderTargets(1, &target, nullptr);
+
+            auto viewport = D3D11_VIEWPORT{
+                .TopLeftX = 0.0f,
+                .TopLeftY = 0.0f,
+                .Width = float(view.width),
+                .Height = float(view.height),
+                .MinDepth = 0.0f,
+                .MaxDepth = 1.0f
+            };
+            context->RSSetViewports(1, &viewport);
+
+            const float color[] = { 0.0f, 0.0f, 0.0f, 0.0f }; //transparent
+            context->ClearRenderTargetView(view.render_target_view, color);
+        }
+
+        __forceinline composite_state_backup_t get_composite_state(ID3D11DeviceContext* context) noexcept {
+            auto result = composite_state_backup_t();
+
+            context->IAGetInputLayout(&result.input_layout);
+            context->IAGetVertexBuffers(0, 1, &result.vertex_buffer, &result.vertex_stride, &result.vertex_offset);
+            context->IAGetIndexBuffer(&result.index_buffer, &result.index_format, &result.index_offset);
+            context->IAGetPrimitiveTopology(&result.topology);
+
+            context->VSGetShader(&result.vertex_shader, nullptr, nullptr);
+            context->PSGetShader(&result.pixel_shader, nullptr, nullptr);
+            context->GSGetShader(&result.geometry_shader, nullptr, nullptr);
+            context->HSGetShader(&result.hull_shader, nullptr, nullptr);
+            context->DSGetShader(&result.domain_shader, nullptr, nullptr);
+
+            context->PSGetShaderResources(0, 1, &result.pixel_shader_shader_resource_view);
+            context->PSGetSamplers(0, 1, &result.pixel_shader_sampler);
+
+            context->OMGetBlendState(&result.blend, result.blend_factor, &result.sample_mask);
+            context->OMGetDepthStencilState(&result.depth_stencil, &result.stencil_ref);
+
+            context->RSGetState(&result.rasterizer);
+            context->RSGetViewports(&result.viewport_count, result.viewports);
+            context->RSGetScissorRects(&result.scissor_count, result.scissor_rects);
+
+            return result;
+        }
+
+        __forceinline void set_composite_state(ID3D11DeviceContext* context, composite_state_backup_t& state) noexcept {
             context->IASetInputLayout(state.input_layout);
             context->IASetVertexBuffers(0, 1, &state.vertex_buffer, &state.vertex_stride, &state.vertex_offset);
             context->IASetIndexBuffer(state.index_buffer, state.index_format, state.index_offset);
@@ -1080,22 +859,254 @@ namespace wdwmo {
             context->RSSetViewports(state.viewport_count, state.viewports);
             context->RSSetScissorRects(state.scissor_count, state.scissor_rects);
 
-            safe_release(state.input_layout);
-            safe_release(state.vertex_buffer);
-            safe_release(state.index_buffer);
-            safe_release(state.vertex_shader);
-            safe_release(state.pixel_shader);
-            safe_release(state.geometry_shader);
-            safe_release(state.hull_shader);
-            safe_release(state.domain_shader);
-            safe_release(state.pixel_shader_shader_resource_view);
-            safe_release(state.pixel_shader_sampler);
-            safe_release(state.blend);
-            safe_release(state.depth_stencil);
-            safe_release(state.rasterizer);
+            release_dxany(state.input_layout);
+            release_dxany(state.vertex_buffer);
+            release_dxany(state.index_buffer);
+            release_dxany(state.vertex_shader);
+            release_dxany(state.pixel_shader);
+            release_dxany(state.geometry_shader);
+            release_dxany(state.hull_shader);
+            release_dxany(state.domain_shader);
+            release_dxany(state.pixel_shader_shader_resource_view);
+            release_dxany(state.pixel_shader_sampler);
+            release_dxany(state.blend);
+            release_dxany(state.depth_stencil);
+            release_dxany(state.rasterizer);
         }
 
-        bool render_to_final(
+        status_t create_offscreen_texture(ID3D11Device* device, ui32_t width, ui32_t height, DXGI_FORMAT format, offscreen_view_t& _view) noexcept {
+            if (!device || width == 0 || height == 0 || format == DXGI_FORMAT_UNKNOWN) return status_t::invalid_argument_passed;
+
+            _view.release();
+
+            auto description = D3D11_TEXTURE2D_DESC{
+                .Width = width,
+                .Height = height,
+                .MipLevels = 1,
+                .ArraySize = 1,
+                .Format = format,
+                .SampleDesc = {
+                    .Count = 1,
+                    .Quality = 0
+                },
+                .Usage = D3D11_USAGE_DEFAULT,
+                .BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE,
+                .CPUAccessFlags = 0,
+                .MiscFlags = 0
+            };
+
+            auto status = status_t();
+
+            auto texture = (ID3D11Texture2D*)nullptr;
+            if (FAILED(device->CreateTexture2D(&description, nullptr, &texture)) || !texture) {
+                status = status_t::cant_create_texture;
+
+            _Exit:
+                return status;
+            }
+
+            auto render_target_view = (ID3D11RenderTargetView*)nullptr;
+            if (FAILED(device->CreateRenderTargetView(texture, nullptr, &render_target_view)) || !render_target_view) {
+                status = status_t::cant_create_render_target_view;
+
+            _ReleaseTextureExit:
+                texture->Release();
+
+                goto _Exit;
+            }
+
+            auto shader_resource_view = (ID3D11ShaderResourceView*)nullptr;
+            if (FAILED(device->CreateShaderResourceView(texture, nullptr, &shader_resource_view)) || !shader_resource_view) {
+                status = status_t::cant_create_shader_resource_view;
+
+                render_target_view->Release();
+                
+                goto _ReleaseTextureExit;
+            }
+
+            _view.texture = texture;
+            _view.render_target_view = render_target_view;
+            _view.shader_resource_view = shader_resource_view;
+            _view.width = width;
+            _view.height = height;
+            _view.format = format;
+
+            return status_t::success;
+        }
+
+        status_t create_composite_quad(ID3D11Device* device, composite_pipeline_t& pipeline) noexcept {
+            composite_vertex_t vertices[4] = {
+                { { -1.0f,  1.0f }, { 0.0f, 0.0f } }, // TL
+                { {  1.0f,  1.0f }, { 1.0f, 0.0f } }, // TR
+                { { -1.0f, -1.0f }, { 0.0f, 1.0f } }, // BL
+                { {  1.0f, -1.0f }, { 1.0f, 1.0f } }, // BR
+            };
+
+            const ui16_t indices[6] = {
+                0, 1, 2,
+                2, 1, 3
+            };
+
+            auto vertex_buffer_description = D3D11_BUFFER_DESC{
+                .ByteWidth = sizeof(vertices),
+                .Usage = D3D11_USAGE_DYNAMIC,
+                .BindFlags = D3D11_BIND_VERTEX_BUFFER,
+                .CPUAccessFlags = D3D11_CPU_ACCESS_WRITE
+            };
+
+            auto vertex_buffer_data = D3D11_SUBRESOURCE_DATA{
+                .pSysMem = vertices
+            };
+
+            if (FAILED(device->CreateBuffer(
+                &vertex_buffer_description, 
+                &vertex_buffer_data, 
+                &pipeline.vertex_buffer))) return status_t::cant_create_vertex_buffer;
+
+            auto index_buffer_description = D3D11_BUFFER_DESC{
+                .ByteWidth = sizeof(indices),
+                .Usage = D3D11_USAGE_IMMUTABLE,
+                .BindFlags = D3D11_BIND_INDEX_BUFFER
+            };
+
+            auto index_buffer_data = D3D11_SUBRESOURCE_DATA{
+                .pSysMem = indices
+            };
+
+            if (FAILED(device->CreateBuffer(
+                &index_buffer_description, 
+                &index_buffer_data, 
+                &pipeline.index_buffer))) return status_t::cant_create_index_buffer;
+
+            return status_t::success;
+        }
+
+        __forceinline bool create_composite_blend_state(ID3D11Device* device, ID3D11BlendState*& _blend) noexcept {
+            auto description = D3D11_BLEND_DESC{
+                .RenderTarget = {
+                    {
+                        .BlendEnable = TRUE,
+                        .SrcBlend = D3D11_BLEND_ONE,
+                        .DestBlend = D3D11_BLEND_INV_SRC_ALPHA,
+                        .BlendOp = D3D11_BLEND_OP_ADD,
+                        .SrcBlendAlpha = D3D11_BLEND_ONE,
+                        .DestBlendAlpha = D3D11_BLEND_INV_SRC_ALPHA,
+                        .BlendOpAlpha = D3D11_BLEND_OP_ADD,
+                        .RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL
+                    }
+                }
+            };
+
+            return SUCCEEDED(device->CreateBlendState(&description, &_blend)) && _blend;
+        }
+
+        status_t create_composite_pipeline(
+            ID3D11Device* device, 
+            ID3DBlob* _vertex_shader,
+            ID3DBlob* _pixel_shader,
+            composite_pipeline_t& _pipeline) noexcept {
+            if (!device || !_vertex_shader || !_pixel_shader) return status_t::invalid_argument_passed;
+
+            _pipeline.release();
+
+            auto status = status_t();
+
+            if (FAILED(device->CreateVertexShader(
+                rotation_shader_blob_vertex->GetBufferPointer(),
+                rotation_shader_blob_vertex->GetBufferSize(),
+                nullptr,
+                &_pipeline.vertex_shader)) || !_pipeline.vertex_shader) {
+                status = status_t::cant_create_vertex_shader;
+
+            _Fail:
+                _pipeline.release();
+
+            _Exit:
+                return status;
+            }
+
+            if (FAILED(device->CreatePixelShader(
+                rotation_shader_blob_pixel->GetBufferPointer(),
+                rotation_shader_blob_pixel->GetBufferSize(),
+                nullptr,
+                &_pipeline.pixel_shader)) || !_pipeline.pixel_shader) {
+                status = status_t::cant_create_pixel_shader;
+
+                goto _Fail;
+            }
+
+            D3D11_INPUT_ELEMENT_DESC input_elements[] = {
+                { "POSITION", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0 },
+                { "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, sizeof(float) * 2, D3D11_INPUT_PER_VERTEX_DATA, 0 }
+            };
+
+            if (FAILED(device->CreateInputLayout(
+                input_elements,
+                ARRAYSIZE(input_elements),
+                rotation_shader_blob_vertex->GetBufferPointer(),
+                rotation_shader_blob_vertex->GetBufferSize(),
+                &_pipeline.input_layout)) || !_pipeline.input_layout) {
+                status = status_t::cant_create_shader_layout;
+
+                goto _Fail;
+            }
+
+            auto sampler_description = D3D11_SAMPLER_DESC{
+                .Filter = D3D11_FILTER_MIN_MAG_MIP_POINT,
+                .AddressU = D3D11_TEXTURE_ADDRESS_CLAMP,
+                .AddressV = D3D11_TEXTURE_ADDRESS_CLAMP,
+                .AddressW = D3D11_TEXTURE_ADDRESS_CLAMP,
+                .ComparisonFunc = D3D11_COMPARISON_ALWAYS,
+                .MinLOD = 0.0f,
+                .MaxLOD = D3D11_FLOAT32_MAX
+            };
+
+            if (FAILED(device->CreateSamplerState(&sampler_description, &_pipeline.sampler)) || !_pipeline.sampler) {
+                status = status_t::cant_create_sampler;
+
+                goto _Fail;
+            }
+
+            if (!create_composite_blend_state(device, _pipeline.blend)) {
+                status = status_t::cant_create_composite_blend;
+
+                goto _Fail;
+            }
+
+            auto rasterizer_description = D3D11_RASTERIZER_DESC{
+                .FillMode = D3D11_FILL_SOLID,
+                .CullMode = D3D11_CULL_NONE,
+                .DepthClipEnable = FALSE,
+                .ScissorEnable = FALSE
+            };
+
+            if (FAILED(device->CreateRasterizerState(&rasterizer_description, &_pipeline.rasterizer)) || !_pipeline.rasterizer) {
+                status = status_t::cant_create_rasterizer;
+
+                goto _Fail;
+            }
+
+            auto depth_description = D3D11_DEPTH_STENCIL_DESC{
+                .DepthEnable = FALSE,
+                .DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ZERO,
+                .DepthFunc = D3D11_COMPARISON_ALWAYS,
+                .StencilEnable = FALSE
+            };
+
+            if (FAILED(device->CreateDepthStencilState(&depth_description, &_pipeline.depth_stencil)) || !_pipeline.depth_stencil) {
+                status = status_t::cant_create_depth_stencil;
+
+                goto _Fail;
+            }
+
+            if (status = create_composite_quad(device, _pipeline)) goto _Fail;
+
+            status = status_t::success;
+
+            goto _Exit;
+        }
+
+        status_t render_to_final(
             ID3D11DeviceContext* context,
             const offscreen_view_t& source,
             const final_view_t& final,
@@ -1111,24 +1122,23 @@ namespace wdwmo {
                 !pipeline.sampler ||
                 !pipeline.blend ||
                 !pipeline.rasterizer ||
-                !pipeline.depth_stencil) return false;
+                !pipeline.depth_stencil) return status_t::invalid_argument_passed;
 
-            if (!update_quad_uv(context, pipeline.vertex_buffer, final.rotation)) return false;
+            if (!update_quad_uv(context, pipeline.vertex_buffer, final.rotation)) return status_t::cant_update_quads;
 
-            composite_state_backup_t state{};
-            backup_composite_state(context, state);
+            auto state = get_composite_state(context);
 
             auto target = final.render_target_view;
             context->OMSetRenderTargets(1, &target, nullptr);
 
-            D3D11_VIEWPORT viewport{};
-            viewport.TopLeftX = 0.0f;
-            viewport.TopLeftY = 0.0f;
-            viewport.Width = static_cast<float>(final.width);
-            viewport.Height = static_cast<float>(final.height);
-            viewport.MinDepth = 0.0f;
-            viewport.MaxDepth = 1.0f;
-
+            auto viewport = D3D11_VIEWPORT{
+                .TopLeftX = 0.0f,
+                .TopLeftY = 0.0f,
+                .Width = float(final.width),
+                .Height = float(final.height),
+                .MinDepth = 0.0f,
+                .MaxDepth = 1.0f
+            };
             context->RSSetViewports(1, &viewport);
 
             UINT stride = sizeof(composite_vertex_t);
@@ -1158,29 +1168,46 @@ namespace wdwmo {
             auto null_shader_resource_view = (ID3D11ShaderResourceView*)nullptr;
             context->PSSetShaderResources(0, 1, &null_shader_resource_view);
 
-            restore_composite_state(context, state);
+            set_composite_state(context, state);
 
-            return true;
+            return status_t::success;
         }
 
-        void get_offscreen_size(
-            const chain_info_t& info,
-            DXGI_MODE_ROTATION rotation,
-            UINT& width,
-            UINT& height) noexcept {
-            width = info.output_display.rect.width();
-            height = info.output_display.rect.height();
+        status_t compile_rotation_shaders(ID3DBlob*& _vertex, ID3DBlob*& _pixel) noexcept {
+            constexpr auto flags = D3DCOMPILE_ENABLE_STRICTNESS;
 
-            if (width && height) return;
+            auto error_blob = (ID3DBlob*)nullptr;
+            auto status = status_t();
 
-            if (rotation == DXGI_MODE_ROTATION_ROTATE90 || rotation == DXGI_MODE_ROTATION_ROTATE270) {
-                width = info.buffer.height;
-                height = info.buffer.width;
+            if (FAILED(D3DCompile(
+                __hlslRotationShaderVertex, sizeof(__hlslRotationShaderVertex) - 1,
+                nullptr, nullptr, nullptr,
+                "m", "vs_4_0",
+                flags, 0,
+                &_vertex, &error_blob)) || !_vertex) {
+                status = status_t::vertex_shader_compilation_error;
+
+            _Fail:
+                release_dxany(error_blob);
+
+            _Exit:
+                return status;
             }
-            else {
-                width = info.buffer.width;
-                height = info.buffer.height;
+
+            if (FAILED(D3DCompile(
+                __hlslRotationShaderPixel, sizeof(__hlslRotationShaderPixel) - 1,
+                nullptr, nullptr, nullptr,
+                "m", "ps_4_0",
+                flags, 0,
+                &_pixel, &error_blob)) || !_pixel) {
+                status = status_t::pixel_shader_compilation_error;
+
+                goto _Fail;
             }
+
+            status = status_t::success;
+
+            goto _Exit;
         }
     }
 
@@ -1283,19 +1310,105 @@ namespace wdwmo {
         return result;
     }
 
-    template<typename _t>
+    status_t make_offscreen_layer(
+        context_t::environment_t* context, 
+        ID3D11Device* device,
+        ID3D11DeviceContext* device_context,
+        ID3D11Texture2D* texture,
+        ID3D11RenderTargetView* render_target_view) noexcept {
+        if (!context || !device || !device_context || !texture || !render_target_view) return status_t::invalid_argument_passed;
+
+        auto& info = context->chain_info;
+
+        const auto resources_info = context->resources_info;
+        const auto rotation = DXGI_MODE_ROTATION(context->chain_info.dxgi_output_rotation);
+        const auto format = DXGI_FORMAT(info.buffer.format);
+
+        auto data = new details::private_data_t();
+
+        data->final_view = {
+            .texture = texture,
+            .render_target_view = render_target_view,
+            .texture_referenced = resources_info.was_referenced.texture,
+            .render_target_view_referenced = resources_info.was_referenced.render_target_view,
+            .width = info.buffer.width,
+            .height = info.buffer.height,
+            .format = format,
+            .rotation = rotation
+        };
+
+        auto width = ui32_t();
+        auto height = ui32_t();
+
+        details::get_offscreen_size(info, rotation, width, height);
+
+        auto status = status_t();
+
+        if (status = details::create_offscreen_texture(
+            device, 
+            width, 
+            height, 
+            format, 
+            data->offscreen_view)) {
+        _Fail:
+            data->final_view = { };
+            data->composite_pipeline.release();
+            data->offscreen_view.release();
+
+            delete data;
+
+            return status;
+        }
+
+        if (status = details::create_composite_pipeline(
+            device,
+            details::rotation_shader_blob_vertex,
+            details::rotation_shader_blob_pixel,
+            data->composite_pipeline)) goto _Fail;
+
+        auto& private_data = details::get_private_data(*context); {
+            auto previous = private_data;
+            private_data = data;
+            if (previous) {
+                previous->release();
+            }
+        }
+        
+        context->resources_info.was_referenced.texture = false;
+        context->resources_info.was_referenced.render_target_view = false;
+
+        context->texture = private_data->offscreen_view.texture;
+        context->render_target_view = private_data->offscreen_view.render_target_view;
+
+        info.buffer.width = private_data->offscreen_view.width;
+        info.buffer.height = private_data->offscreen_view.height;
+        info.buffer.format = private_data->offscreen_view.format;
+
+        conlog(
+            "[w] " function_name ": transform view created:\n"
+            "    original:  %#llx / %#llx, %dx%d (%#x), rotation: %d [display: %d, dxgi: %d]\n"
+            "    offscreen: %#llx / %#llx / %#llx, %dx%d (%#x)\n"
+            "    rect:      %d,%d -> %d,%d\n",
+            private_data->final_view.texture,
+            private_data->final_view.render_target_view,
+            private_data->final_view.width, private_data->final_view.height, private_data->final_view.format, private_data->final_view.rotation,
+            info.output_display.rotation, info.dxgi_output_rotation,
+            private_data->offscreen_view.texture,
+            private_data->offscreen_view.render_target_view,
+            private_data->offscreen_view.shader_resource_view,
+            private_data->offscreen_view.width, private_data->offscreen_view.height, private_data->offscreen_view.format,
+            info.output_display.rect.left, info.output_display.rect.top, info.output_display.rect.right, info.output_display.rect.bottom);
+
+        return status_t::success;
+    }
+
+    template<typename source_t>
     status_t on_initialize(
         working_set* set,
-        _t* source,
+        source_t* source,
         context_t::environment_t*& context,
         context_t::call_t& call_info) noexcept {
-        constexpr auto legacy = std::is_same<_t, IDXGISwapChainDWMLegacy>::value;
-
-        if (set->suspended()) {
-            set->response(true);
-
-            return status_t::success;
-        }
+        constexpr auto legacy = std::is_same<source_t, IDXGISwapChainDWMLegacy>::value;
 
         auto& configuration = set->configuration();
         auto& info = context->chain_info;
@@ -1311,7 +1424,7 @@ namespace wdwmo {
             context->release_resources();
         }
 
-        if (auto status = retrieve_render_context<_t>(
+        if (auto status = retrieve_render_context<source_t>(
             source,
             device,
             device_context,
@@ -1347,7 +1460,7 @@ namespace wdwmo {
             "    vid pn id:      %08x:%08x\n"
             "    buffer:         %dx%d (%#x)\n"
             "    internal:       %#llx\n",
-            retrieve_render_context<_t>, legacy ? 'l' : 'm',
+            retrieve_render_context<source_t>, legacy ? 'l' : 'm',
             call_info.instance,
             call_info.chain,
             texture,
@@ -1368,72 +1481,12 @@ namespace wdwmo {
         context->texture = texture;
         context->render_target_view = render_target_view;
 
-        auto& private_data = details::get_private_data(*context);
-        details::release_private_context_data(private_data);
-
-        private_data = new details::private_context_data_t();
-
-        const auto original_resource_info = context->resources_info;
-        const auto final_rotation = DXGI_MODE_ROTATION(context->chain_info.dxgi_output_rotation);
-
-        private_data->final_view = {
-            .texture = texture,
-            .render_target_view = render_target_view,
-            .texture_referenced = bool(original_resource_info.was_referenced.texture),
-            .render_target_view_referenced = bool(original_resource_info.was_referenced.render_target_view),
-            .width = info.buffer.width,
-            .height = info.buffer.height,
-            .format = DXGI_FORMAT(info.buffer.format),
-            .rotation = final_rotation
-        };
-
-        context->resources_info.was_referenced.texture = false;
-        context->resources_info.was_referenced.render_target_view = false;
-
-        auto offscreen_width = UINT();
-        auto offscreen_height = UINT();
-
-        details::get_offscreen_size(
-            info,
-            final_rotation,
-            offscreen_width,
-            offscreen_height);
-
-        if (!details::create_offscreen_texture(
+        make_offscreen_layer(
+            context,
             device,
-            offscreen_width,
-            offscreen_height,
-            DXGI_FORMAT(info.buffer.format),
-            private_data->offscreen_view) ||
-            !details::create_composite_pipeline(
-                device,
-                private_data->composite_pipeline)) {
-            context->release_resources();
-
-            return status_t::unexpected_state;
-        }
-
-        context->texture = private_data->offscreen_view.texture;
-        context->render_target_view = private_data->offscreen_view.render_target_view;
-
-        info.buffer.width = private_data->offscreen_view.width;
-        info.buffer.height = private_data->offscreen_view.height;
-        info.buffer.format = private_data->offscreen_view.format;
-
-        conlog(
-            "[w] " function_name ": transform view created:\n"
-            "    original:  %#llx / %#llx, %dx%d (%#x), rotation: %d [display: %d, dxgi: %d]\n"
-            "    offscreen: %#llx / %#llx / %#llx, %dx%d (%#x)\n"
-            "    rect:      %d,%d -> %d,%d\n",
-            private_data->final_view.texture,
-            private_data->final_view.render_target_view,
-            private_data->final_view.width, private_data->final_view.height, private_data->final_view.format, private_data->final_view.rotation,
-            info.output_display.rotation, info.dxgi_output_rotation,
-            private_data->offscreen_view.texture,
-            private_data->offscreen_view.render_target_view,
-            private_data->offscreen_view.shader_resource_view,
-            private_data->offscreen_view.width, private_data->offscreen_view.height, private_data->offscreen_view.format,
-            info.output_display.rect.left, info.output_display.rect.top, info.output_display.rect.right, info.output_display.rect.bottom);
+            device_context,
+            texture,
+            render_target_view);
 
         if (reinitialize) {
             context->reinitialize = false;
@@ -1442,13 +1495,7 @@ namespace wdwmo {
         return set->initialize(__thread_id, *context, call_info);
     }
 
-    status_t present_callback(working_set* set, void* overlay_swap_chain, context_t::call_t& call_info) {
-        if (set->suspended()) {
-            set->response(true);
-
-            return status_t::aborted;
-        }
-
+    status_t present_callback(working_set* set, void* overlay_swap_chain, context_t::call_t& call_info) noexcept {
         const auto& configuration = set->configuration();
 
         auto source = (void*)nullptr;
@@ -1478,7 +1525,7 @@ namespace wdwmo {
         auto environment = (context_t::environment_t*)nullptr;
         auto first = false;
 
-        if (auto status = set->get_context_environment(source, __thread_id, environment, first)) return status;
+        if (auto status = set->get_context_environment(source, environment, first)) return status;
 
         if (!environment) return status_t::chain_environment_not_found;
 
@@ -1491,36 +1538,30 @@ namespace wdwmo {
         }
 
         auto device_context = environment->device_context_as<ID3D11DeviceContext>();
-        auto private_data = details::get_private_data(*environment);
-
-        if (!device_context || !private_data) return status_t::unexpected_state;
-
-        auto previous_render_target_view = (ID3D11RenderTargetView*)nullptr;
-        auto previous_depth_stencil_view = (ID3D11DepthStencilView*)nullptr;
+        auto previous_render_target_view = CComPtr<ID3D11RenderTargetView>();
+        auto previous_depth_stencil_view = CComPtr<ID3D11DepthStencilView>();
+        auto result = status_t();
 
         device_context->OMGetRenderTargets(1, &previous_render_target_view, &previous_depth_stencil_view);
 
-        details::cleanup_view(device_context, private_data->offscreen_view);
+        if (auto private_data = details::get_private_data(*environment)) {
+            details::cleanup_view(device_context, private_data->offscreen_view);
 
-        auto result = set->render(*environment, call_info);
+            result = set->render(*environment, call_info);
 
-        if (result == status_t::success && !details::render_to_final(
-            device_context,
-            private_data->offscreen_view,
-            private_data->final_view,
-            private_data->composite_pipeline)) {
-            result = status_t::unexpected_state;
+            if (result == status_t::success) {
+                result = details::render_to_final(
+                    device_context,
+                    private_data->offscreen_view,
+                    private_data->final_view,
+                    private_data->composite_pipeline);
+            }
+        }
+        else {
+            result = set->render(*environment, call_info);
         }
 
         device_context->OMSetRenderTargets(1, &previous_render_target_view, previous_depth_stencil_view);
-
-        if (previous_depth_stencil_view) {
-            previous_depth_stencil_view->Release();
-        }
-
-        if (previous_render_target_view) {
-            previous_render_target_view->Release();
-        }
 
         return result;
     }
@@ -1530,21 +1571,20 @@ namespace wdwmo {
     ui64_t __fastcall wrapped_present_win10(
         void* instance,             // COverlayContext*
         void* overlay_swap_chain,   // IOverlaySwapChain*
-        ui32_t a3,                  // ui
+        ui32_t a3,                  // uint
         const std::vector<rect_t, std::allocator<rect_t>>& dirty_rects, // std::vector<tagRECT,std::allocator<tagRECT>> const &,
-        ui32_t a5,                  // ui,
+        ui32_t a5,                  // uint,
         bool legacy_present         // bool
     ) noexcept {
         //1800EC048 COverlayContext::Present(
         // COverlayContext*, 
         // IOverlaySwapChain*,
-        // ui,
+        // uint,
         // std::vector<tagRECT,std::allocator<tagRECT>> const &,
-        // ui,
+        // uint,
         // bool)
 
         auto self = wdwmo::self;
-
         auto original = self->get_original_present<typeof(wrapped_present_win10)*>();
 
         auto call_info = context_t::call_t{
@@ -1554,7 +1594,9 @@ namespace wdwmo {
             .legacy_present = legacy_present
         };
 
-        self->on_present(overlay_swap_chain, call_info);
+        if (self->can_proceed()) {
+            self->on_present(overlay_swap_chain, call_info);
+        }
 
         auto result = original(
             instance, 
@@ -1571,18 +1613,18 @@ namespace wdwmo {
     ui64_t __fastcall wrapped_present_win11(
         void* instance,             // COverlayContext*
         void* overlay_swap_chain,   // IOverlaySwapChain*
-        ui32_t a3,                  // ui
+        ui32_t a3,                  // uint
         const std::vector<rect_t, std::allocator<rect_t>>& dirty_rects, // std::vector<tagRECT,std::allocator<tagRECT>> const &,
-        ui32_t a5,                  // ui,
+        ui32_t a5,                  // uint,
         bool* a6,                   // bool*
         bool legacy_present         // bool
     ) noexcept {
         //180231000	COverlayContext::Present(
         // COverlayContext*,
         // IOverlaySwapChain*,
-        // ui,
+        // uint,
         // std::vector<tagRECT,std::allocator<tagRECT>> const &,
-        // ui,
+        // uint,
         // bool*,
         // bool)
 
@@ -1597,7 +1639,9 @@ namespace wdwmo {
             .legacy_present = legacy_present
         };
 
-        self->on_present(overlay_swap_chain, call_info);
+        if (self->can_proceed()) {
+            self->on_present(overlay_swap_chain, call_info);
+        }
 
         auto result = original(
             instance,
@@ -1633,31 +1677,34 @@ namespace wdwmo {
     }
 
     void context_t::environment_t::release_resources() noexcept {
-        auto& private_data = details::get_private_data(*this);
-        details::release_private_context_data(private_data);
+        if(auto& private_data = details::get_private_data(*this)) {
+            private_data->release();
+            private_data = nullptr;
+        }
 
         if (auto instance = device_as<IUnknown>(); instance && resources_info.was_referenced.device) {
             instance->Release();
         }
+        device = nullptr;
 
         if (auto instance = device_context_as<IUnknown>(); instance && resources_info.was_referenced.device_context) {
             instance->Release();
         }
+        device_context = nullptr;
 
         if (auto instance = texture_as<IUnknown>(); instance && resources_info.was_referenced.texture) {
             instance->Release();
         }
+        texture = nullptr;
 
         if (auto instance = render_target_view_as<IUnknown>(); instance && resources_info.was_referenced.render_target_view) {
             instance->Release();
         }
+        render_target_view = nullptr;
 
         output = nullptr;
-        device = nullptr;
-        device_context = nullptr;
-        texture = nullptr;
-        render_target_view = nullptr;
-        resources_info.flag_value = 0;
+
+        resources_info = { };
     }
 
     void working_set::reset(present_callback_t present_callback, initialization_callback_t initialization_callback, render_callback_t render_callback) noexcept {
@@ -1670,8 +1717,8 @@ namespace wdwmo {
             _initialization_callback, initialization_callback,
             _render_callback, render_callback);
 
-        _active = false;
         _response = false;
+        _active = false;
 
         for (int i = 0, l = 2500, s = 5; i < l && !_response; i += s) {
             ncore::thread::sleep(s);
@@ -1817,6 +1864,13 @@ namespace wdwmo {
         if (!utils::get_pe_info(dwmcore_module.address(), dwmcore_module.size(), dwmcore_info) || !utils::get_pe_info(dxgi_module.address(), dxgi_module.size(), dxgi_info)) return status_t::cant_get_pe_info;
 
         dxgi_bounds = new range<address_t>(dxgi_module.address(), byte_p(dxgi_module.address()) + dxgi_module.size());
+
+        if (auto status = details::compile_rotation_shaders(details::rotation_shader_blob_vertex, details::rotation_shader_blob_pixel)) {
+            conlog("[w] " function_name " [!] rotation shaders isn't compiled, rotation modes unsupported, status %d\n", status);
+        }
+        else {
+            conlog("[w] " function_name " rotation shaders compiled successfully\n");
+        }
 
         conlog(
             "[w] " function_name ": core modules:\n"

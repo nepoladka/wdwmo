@@ -38,6 +38,22 @@ namespace wdwmo {
 			cant_get_target_view,
 			cant_get_display_config_buffer_sizes,
 			cant_get_display_config,
+			cant_create_texture,
+			cant_update_quads,
+			cant_create_vertex_buffer,
+			cant_create_index_buffer,
+			vertex_shader_compilation_error,
+			pixel_shader_compilation_error,
+			cant_create_vertex_shader,
+			cant_create_pixel_shader,
+			cant_create_shader_layout,
+			cant_create_sampler,
+			cant_create_rasterizer,
+			cant_create_depth_stencil,
+			cant_create_composite_blend,
+			shaders_isnt_compiled,
+			cant_create_render_target_view,
+			cant_create_shader_resource_view,
 
 			wrong_image_timestamp,
 			wrong_image_size,
@@ -83,6 +99,22 @@ namespace wdwmo {
 				"cant_get_target_view",
 				"cant_get_display_config_buffer_sizes",
 				"cant_get_display_config",
+				"cant_create_texture",
+				"cant_update_quads",
+				"cant_create_vertex_buffer",
+				"cant_create_index_buffer",
+				"vertex_shader_compilation_error",
+				"pixel_shader_compilation_error",
+				"cant_create_vertex_shader",
+				"cant_create_pixel_shader",
+				"cant_create_shader_layout",
+				"cant_create_sampler",
+				"cant_create_rasterizer",
+				"cant_create_depth_stencil",
+				"cant_create_composite_blend",
+				"shaders_isnt_compiled",
+				"cant_create_render_target_view",
+				"cant_create_shader_resource_view",
 				"wrong_image_timestamp",
 				"wrong_image_size",
 				"wrong_image_checksum"
@@ -287,6 +319,14 @@ namespace wdwmo {
 			return not _active;
 		}
 
+		__forceinline bool can_proceed() noexcept {
+			if (_active) return true;
+
+			_response = true;
+
+			return false;
+		}
+
 		__forceinline bool response(bool value) noexcept {
 			auto previous = _response;
 
@@ -305,7 +345,7 @@ namespace wdwmo {
 			return _targets;
 		}
 
-		__forceinline status_t get_context_environment(void* identifier, ui32_t thread_id, context_t::environment_t*& _context, bool& _new) noexcept {
+		__forceinline status_t get_context_environment(void* identifier, context_t::environment_t*& _context, bool& _new) noexcept {
 			auto registry = _context_registry;
 			if (!registry) return status_t::not_initialized;
 
