@@ -1590,8 +1590,12 @@ namespace wdwmo {
         auto call_info = context_t::call_t{
             .instance = instance,
             .chain = overlay_swap_chain,
-            .dirty_rects = dirty_rects,
-            .legacy_present = legacy_present
+            .legacy_present = legacy_present,
+            .dirty_rects = {
+                .original = dirty_rects,
+                .custom = { },
+                .changed = false
+            }
         };
 
         if (self->can_proceed()) {
@@ -1602,7 +1606,7 @@ namespace wdwmo {
             instance, 
             overlay_swap_chain, 
             a3, 
-            call_info.dirty_rects, 
+            call_info.dirty_rects.changed ? call_info.dirty_rects.custom : call_info.dirty_rects.original,
             a5, 
             legacy_present);
 
@@ -1635,8 +1639,12 @@ namespace wdwmo {
         auto call_info = context_t::call_t{
             .instance = instance,
             .chain = overlay_swap_chain,
-            .dirty_rects = dirty_rects,
-            .legacy_present = legacy_present
+            .legacy_present = legacy_present,
+            .dirty_rects = {
+                .original = dirty_rects,
+                .custom = { },
+                .changed = false
+            }
         };
 
         if (self->can_proceed()) {
@@ -1646,8 +1654,8 @@ namespace wdwmo {
         auto result = original(
             instance,
             overlay_swap_chain,
-            a3, 
-            call_info.dirty_rects,
+            a3,
+            call_info.dirty_rects.changed ? call_info.dirty_rects.custom : call_info.dirty_rects.original,
             a5,
             a6, 
             legacy_present);

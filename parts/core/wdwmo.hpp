@@ -239,8 +239,12 @@ namespace wdwmo {
 		struct call_t {
 			void* instance = { }; //coverlaycontext*
 			void* chain = { }; //ioverlayswapchain*
-			const std::vector<rect_t>& dirty_rects = { };
 			const bool legacy_present = { };
+			struct {
+				const std::vector<rect_t>& original = { };
+				std::vector<rect_t> custom = { };
+				bool changed = false; //when true, used custom instead of original
+			}dirty_rects = { };
 		};
 
 		environment_t& info; //static cacheable data
