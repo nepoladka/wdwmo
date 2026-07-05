@@ -64,7 +64,13 @@ public:
 
 
     wtoverlay(const std::string& name) {
-        target_window.name = name;
+        set(name);
+    }
+
+    void set(const std::string& name) {
+        target_window = {
+            .name = name
+        };
     }
 
     bool is_target_on_screen(const wdwmo::rect_t& rect, const vec2f& scale, bool full = false) {
@@ -246,7 +252,7 @@ wdwmo::initialization_guard* get_or_create_shared_guard(ui64_t storage_identifie
 }
 
 
-WPARAM translate_mouse_wparam(WPARAM message, const MSLLHOOKSTRUCT* info) noexcept {
+__forceinline WPARAM translate_mouse_wparam(WPARAM message, const MSLLHOOKSTRUCT* info) noexcept {
     if (info) switch (message) {
     default: break;
 
@@ -261,22 +267,86 @@ WPARAM translate_mouse_wparam(WPARAM message, const MSLLHOOKSTRUCT* info) noexce
     return 0;
 }
 
-LPARAM translate_keyboard_lparam(WPARAM message, const KBDLLHOOKSTRUCT* info) noexcept {
+__forceinline LPARAM translate_keyboard_lparam(WPARAM message, const KBDLLHOOKSTRUCT* info) noexcept {
     if (!info) return 0;
 
     LPARAM lparam = 1;
     lparam |= LPARAM(info->scanCode & 0xff) << 16;
 
     if (info->flags & LLKHF_EXTENDED) {
-        lparam |= 1u << 24;
+        lparam |= 1ll << 24;
+    }
+
+    if (info->flags & LLKHF_ALTDOWN) {
+        lparam |= 1ll << 29;
     }
 
     if (message == WM_KEYUP || message == WM_SYSKEYUP) {
-        lparam |= 1u << 30;
-        lparam |= 1u << 31;
+        lparam |= 1ll << 31;
     }
 
     return lparam;
+}
+
+__forceinline void send_imgui_char(WPARAM message, const KBDLLHOOKSTRUCT* info) noexcept {
+    if (message == WM_KEYDOWN || message == WM_SYSKEYDOWN) {
+        byte_t states[256] = {};
+
+        auto set_state = [&](int key) {
+            if (GetAsyncKeyState(key) & 0x8000)
+                states[key] = 0x80;
+            };
+
+        set_state(VK_SHIFT);
+        set_state(VK_LSHIFT);
+        set_state(VK_RSHIFT);
+
+        set_state(VK_CONTROL);
+        set_state(VK_LCONTROL);
+        set_state(VK_RCONTROL);
+
+        set_state(VK_MENU);
+        set_state(VK_LMENU);
+        set_state(VK_RMENU);
+
+        if (GetKeyState(VK_CAPITAL) & 1) {
+            states[VK_CAPITAL] |= 1;
+        }
+
+        if (GetKeyState(VK_NUMLOCK) & 1) {
+            states[VK_NUMLOCK] |= 1;
+        }
+
+        if (GetKeyState(VK_SCROLL) & 1) {
+            states[VK_SCROLL] |= 1;
+        }
+
+        states[info->vkCode] |= 0x80;
+
+        wchar_t chars[8] = { };
+
+        const auto layout = GetKeyboardLayout(__thread_id);
+        const auto count = ToUnicodeEx(
+            info->vkCode,
+            info->scanCode,
+            states,
+            chars,
+            sizeofarr(chars),
+            4,
+            layout);
+
+        for (int i = 0; i < count; ++i) {
+            auto c = chars[i];
+
+            if (c < 0x20 || c == 0x7f) continue;
+
+            ImGui_ImplWin32_WndProcHandler(
+                GetDesktopWindow(),
+                WM_CHAR,
+                WPARAM(c),
+                NULL);
+        }
+    }
 }
 
 LRESULT CALLBACK mouse_callback(int nCode, WPARAM wParam, LPARAM lParam) noexcept {
@@ -305,15 +375,24 @@ LRESULT CALLBACK mouse_callback(int nCode, WPARAM wParam, LPARAM lParam) noexcep
 LRESULT CALLBACK keyboard_callback(int nCode, WPARAM wParam, LPARAM lParam) noexcept {
     const auto info = (KBDLLHOOKSTRUCT*)lParam;
 
-    if (ImGui::GetCurrentContext()) { //at least one imgui context exist
-        const auto wparam = info->vkCode;
-        const auto lparam = translate_keyboard_lparam(wParam, info);
+    if (ImGui::GetCurrentContext()) {
+        const auto message = UINT(wParam);
 
-        ImGui_ImplWin32_WndProcHandler(
-            GetDesktopWindow(),
-            UINT(wParam),
-            wparam,
-            lparam);
+        if (message == WM_KEYDOWN ||
+            message == WM_KEYUP ||
+            message == WM_SYSKEYDOWN ||
+            message == WM_SYSKEYUP) {
+            auto key = WPARAM(info->vkCode);
+            auto lparam = translate_keyboard_lparam(wParam, info);
+
+            ImGui_ImplWin32_WndProcHandler(
+                GetDesktopWindow(),
+                message,
+                key,
+                lparam);
+
+            send_imgui_char(message, info);
+        }
     }
 
     if (info->vkCode == __actionMajorKey) {
@@ -341,6 +420,8 @@ wdwmo::status_t initialization_callback(const wdwmo::context_t& context) noexcep
         auto dx11_result = ImGui_ImplDX11_Init(
             context.info.device_as<ID3D11Device>(),
             context.info.device_context_as<ID3D11DeviceContext>());
+
+        ImGui::GetIO().MousePos = { };
 
         //ImGui::GetIO().Fonts->AddFontFromMemoryTTF((void*)binary_files::consola_ttf, sizeof(binary_files::consola_ttf), 14.0f);
 
@@ -487,41 +568,57 @@ wdwmo::status_t render_callback(const wdwmo::context_t& context) noexcept {
                     } ImGui::EndGroup();
                 } ImGui::EndGroup();
 
-                if (auto wto = targeted_overlay) {
-                    relative_position = wto->get_relative_position(context.info.chain_info.output_display.rect, context.info.chain_info.output_display.scale);
-                    relative_size = wto->get_relative_size(context.info.chain_info.output_display.scale);
+                if (auto overlay = targeted_overlay) {
+                    relative_position = overlay->get_relative_position(context.info.chain_info.output_display.rect, context.info.chain_info.output_display.scale);
+                    relative_size = overlay->get_relative_size(context.info.chain_info.output_display.scale);
 
                     if (context.info.chain_info.output_display.handle) {
-                        target_on_screen = wto->is_target_on_screen(context.info.chain_info.output_display.rect, context.info.chain_info.output_display.scale, false);
+                        target_on_screen = overlay->is_target_on_screen(context.info.chain_info.output_display.rect, context.info.chain_info.output_display.scale, false);
                     }
                     else {
-                        target_on_screen = wto->target_window.on_screen;
+                        target_on_screen = overlay->target_window.on_screen;
                     }
 
                     ImGui::BeginGroup(); {
                         ImGui::TextColored(header_color, "window-targeted overlay");
 
                         ImGui::BeginGroup(); {
-                            ImGui::Text("target: %s (%#llx) %s\n"
+                            ImGui::Text("target: %s\n"
+                                "name:    %s\n"
                                 "handle:  %#llx\n"
                                 "monitor: %#llx\n"
                                 "pos:     %d, %d\n"
                                 "size:    %dx%d\n"
                                 "scale:   %.2f, %.2f\n",
-                                wto->target_window.name.c_str(), wto->target_window.handle, target_on_screen ? "on screen" : wto->target_window.on_screen ? "may be on another screen" : "not on screen at all",
-                                wto->target_window.handle,
-                                wto->target_window.monitor,
-                                wto->target_window.position.x, wto->target_window.position.y,
-                                wto->target_window.size.x, wto->target_window.size.y,
-                                wto->target_window.scale.x, wto->target_window.scale.y);
+                                target_on_screen ? "on screen" : overlay->target_window.on_screen ? "may be on another screen" : "not on screen at all",
+                                overlay->target_window.name.c_str(),
+                                overlay->target_window.handle,
+                                overlay->target_window.monitor,
+                                overlay->target_window.position.x, overlay->target_window.position.y,
+                                overlay->target_window.size.x, overlay->target_window.size.y,
+                                overlay->target_window.scale.x, overlay->target_window.scale.y);
+
+                            static char name_buffer[128] = { };
+                            if (!name_buffer[0]) {
+                                strncpy_s(name_buffer, sizeof(name_buffer) - 1, overlay->target_window.name.data(), overlay->target_window.name.size());
+                            }
+
+                            ImGui::Text("window name:");
+                            ImGui::InputText("##wto_target_name", name_buffer, sizeof(name_buffer) - 1);
+                            ImGui::SameLine();
+                            if (ImGui::Button("Apply")) {
+                                name_buffer[sizeof(name_buffer) - 1] = 0;
+
+                                overlay->set(name_buffer);
+                            }
 
                             ImGui::Text("screen relative (window): \n"
                                 "visible: %s\n"
                                 "pos:     %d, %d\n"
                                 "size:    %dx%d\n",
-                                wto->target_window.on_screen ? "true" : "false",
-                                wto->target_window.relative_position.x, wto->target_window.relative_position.y,
-                                wto->target_window.relative_size.x, wto->target_window.relative_size.y);
+                                overlay->target_window.on_screen ? "true" : "false",
+                                overlay->target_window.relative_position.x, overlay->target_window.relative_position.y,
+                                overlay->target_window.relative_size.x, overlay->target_window.relative_size.y);
 
                             ImGui::SameLine();
 
@@ -537,7 +634,7 @@ wdwmo::status_t render_callback(const wdwmo::context_t& context) noexcept {
                 }
             } ImGui::End();
 
-            if (auto wto = targeted_overlay) {
+            if (auto overlay = targeted_overlay) {
                 if (target_on_screen) {
                     ImGui::SetNextWindowPos({ float(relative_position.x), float(relative_position.y) });
                     ImGui::SetNextWindowSize({ float(relative_size.x), float(relative_size.y) });
@@ -623,15 +720,15 @@ void input_thread() noexcept {
     }
 }
 
-void window_targeted_overlay_info_thread(wtoverlay* wto) noexcept {
+void window_targeted_overlay_info_thread(wtoverlay* overlay) noexcept {
     conlog(
         "[w] " function_name " (%#llx): entered\n"
         "    instance: %#llx\n"
         "    target:   %s\n"
         "    thread:   %d\n",
         window_targeted_overlay_info_thread,
-        wto,
-        wto->target_window.name.c_str(),
+        overlay,
+        overlay->target_window.name.c_str(),
         __thread_id);
 
     auto counter = 0ui64;
@@ -641,7 +738,7 @@ void window_targeted_overlay_info_thread(wtoverlay* wto) noexcept {
 
         auto update_handle = (counter += 10) >= 5000;
 
-        if (!wto->get_window_info(update_handle)) {
+        if (!overlay->get_window_info(update_handle)) {
             ncore::thread::sleep(1000);
 
             continue;
@@ -658,8 +755,8 @@ void window_targeted_overlay_info_thread(wtoverlay* wto) noexcept {
         "    target:   %s\n"
         "    thread:   %d\n",
         window_targeted_overlay_info_thread,
-        wto,
-        wto->target_window.name.c_str(),
+        overlay,
+        overlay->target_window.name.c_str(),
         __thread_id);
 }
 
@@ -700,9 +797,7 @@ void on_attach(wdwmo::configuration_t* configuration) noexcept {
     conlog("[w] " function_name ": initialization status: %d\n", initialization_status);
 
     if (initialization_status == status_t::success) {
-        if (auto wto = targeted_overlay = new wtoverlay("Untitled - Paint")) {
-            auto thread = ncore::thread::create(window_targeted_overlay_info_thread, wto);
-        }
+        ncore::thread::create(window_targeted_overlay_info_thread, targeted_overlay = new wtoverlay("Untitled - Paint"));
     }
 
     if constexpr (__inputHooks) {
