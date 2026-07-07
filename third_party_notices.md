@@ -20,7 +20,7 @@ component is redistributed.
 | cpr | `shared/includes/libraries/cpr.lib` | exact upstream version not embedded; the archive contains the Vcpkg source-tree identifier `0ce00c60cd-ac486fb55d` | MIT | [`.licenses/cpr-MIT.txt`](.licenses/cpr-MIT.txt) |
 | curl / libcurl | `shared/includes/libraries/libcurl.lib` | 7.86.0-DEV | curl license | [`.licenses/curl.txt`](.licenses/curl.txt) |
 | zlib | `shared/includes/libraries/zlib.lib` | 1.2.13 | zlib license | [`.licenses/zlib.txt`](.licenses/zlib.txt) |
-
+| `manual_map_library` function | `shared/includes/sources/ncore/utils.hpp` | unknown, old | MIT | [`.licenses/TheCruZ-SMMI-MIT.txt`](.licenses/TheCruZ-SMMI-MIT.txt) |
 ## BeaEngine and static linking
 
 BeaEngine is not covered by the project's MIT license. It is distributed under
@@ -74,10 +74,6 @@ Windows SDK headers, import libraries, Direct3D, DXGI, SHCore, SetupAPI, and
 other operating-system components are provided under Microsoft's applicable
 license terms. They are not third-party source components redistributed under
 the project's MIT license.
-
-The author's private `ncore` / `nweb` utilities are not upstream third-party
-projects. If their source or binaries are distributed, their licensing status
-must be stated explicitly in that distribution.
 
 ## Maintenance rule
 
