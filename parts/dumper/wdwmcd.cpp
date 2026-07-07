@@ -1,9 +1,16 @@
 #include "wdwmcd.hpp"
 
+#if __has_include("../../../ncore/source/ncore.h")
+#define NCORE_FULL
 #include "../../../ncore/source/utils.hpp"
 #include "../../../ncore/source/disassembly.hpp"
 #include "../../../ncore/source/process.hpp"
 #include "../../../ncore/source/signature.hpp"
+#else
+#define NCORE_CUT
+#include <ncore/utils.hpp>
+#include <ncore/disassembly.hpp>
+#endif
 
 #include <windows.h>
 #include <tlhelp32.h>
@@ -23,6 +30,7 @@
 #include <string>
 #include <string_view>
 #include <vector>
+#include <map>
 
 #ifdef DEBUG
 #define conlog debug::conlogf
@@ -1203,6 +1211,7 @@ namespace wdwmcd {
             const target_t& dwmcore_target,
             void* dwm_process_handle,
             configuration_t& configuration) noexcept {
+#if defined(NCORE_FULL)
             auto process = ncore::process(dwm_process_handle);
             if (!process.alive()) return status_t::invalid_process;
 
@@ -1315,6 +1324,9 @@ namespace wdwmcd {
             if (auto status = detect_dxgi_output_offset(dxgi_output_offset)) return status;
 
             return status_t::success;
+#else
+            return status_t::aborted; //not available because of ncore missing features
+#endif
         }
     }
 }

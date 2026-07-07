@@ -212,7 +212,8 @@ Downloading and caching the PDB is left to the operator. The sample loader perfo
 
 ### Other
 
-- [ ] Add missing dependencies such as **ncore**.
+- [x] Add missing dependencies such as **ncore**.
+  - A stripped-down version of **ncore** was added 07.07.2026.
 
 ---
 
@@ -901,8 +902,6 @@ The project consists of three parts:
 - `wdwmcd` (*Windows DWM Core Dumper*): a module responsible for automatically retrieving all required offsets and analyzing `dwmcore.dll` and `dxgi.dll` using PDB files.
 
 - `wdwmosl` (*Windows DWM Overlay Sample Loader*): a sample loader project. It retrieves offsets from system libraries or libraries specified by the user and loads either a custom or the standard Debug `wdwmo` build into `dwm.exe`.
-
-All three components have dependencies, one of which is missing: **ncore**, which I do not plan to include in the project at this stage. To build the project, you must replace all uses of **ncore** with your own equivalents. There are few such uses, so this is not difficult; however, keep in mind that `ncore::disassembly` is a wrapper around **BeaEngine**.
 
 #### Toolchain
 

@@ -11,9 +11,21 @@
 
 #include "dxgiu.hpp"
 
+#if __has_include("../../../ncore/source/ncore.h")
+#define NCORE_FULL
 #include "../../../ncore/source/task.hpp"
 #include "../../../ncore/source/utils.hpp"
 #include "../../../ncore/source/base64.hpp"
+#else
+#define NCORE_CUT
+#include <ncore/action.hpp>
+#include <ncore/dimension_vector.hpp>
+#include <ncore/base64.hpp>
+#include <ncore/utils.hpp>
+#include <ncore/strings.hpp>
+#include <ncore/process.hpp>
+#include <ncore/thread.hpp>
+#endif
 
 #include <minhook.h>
 

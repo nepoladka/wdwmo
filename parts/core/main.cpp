@@ -2,11 +2,9 @@
 
 #include "wdwmo.hpp"
 
-#include "../../../ncore/source/environment.hpp"
-#include "../../../ncore/source/strings.hpp"
-#include "../../../ncore/source/task.hpp"
-#include "../../../ncore/source/input.hpp"
-#include "../../../ncore/source/utils.hpp"
+#include <ncore/types.hpp>
+#include <ncore/utils.hpp>
+#include <ncore/thread.hpp>
 
 #include <string>
 #include <mutex>
@@ -288,6 +286,49 @@ __forceinline LPARAM translate_keyboard_lparam(WPARAM message, const KBDLLHOOKST
     return lparam;
 }
 
+__forceinline bool is_key_pressed(int index) noexcept {
+    return (GetKeyState(index) & 0x8000) != 0;
+}
+
+__forceinline const char* get_key_name(int index) noexcept {
+    static constexpr const char* const __keyNames[] = {
+        "UNKNOWN", "VK_LBUTTON", "VK_RBUTTON", "VK_CANCEL", "VK_MBUTTON", "VK_XBUTTON1", "VK_XBUTTON2", "RESERVED",
+        "VK_BACK", "VK_TAB", "RESERVED", "RESERVED", "VK_CLEAR", "VK_RETURN", "UNASSIGNED", "UNASSIGNED",
+        "VK_SHIFT", "VK_CONTROL", "VK_MENU", "VK_PAUSE", "VK_CAPITAL", "VK_KANA", "VK_IME_ON", "VK_JUNJA", "VK_FINAL", "VK_KANJI", "VK_IME_OFF",
+        "VK_ESCAPE", "VK_CONVERT", "VK_NONCONVERT", "VK_ACCEPT", "VK_MODECHANGE", "VK_SPACE", "VK_PRIOR", "VK_NEXT", "VK_END", "VK_HOME", "VK_LEFT", "VK_UP",
+        "VK_RIGHT", "VK_DOWN", "VK_SELECT", "VK_PRINT", "VK_EXECUTE", "VK_SNAPSHOT", "VK_INSERT", "VK_DELETE", "VK_HELP",
+        "VK_0", "VK_1", "VK_2", "VK_3", "VK_4", "VK_5", "VK_6", "VK_7", "VK_8", "VK_9",
+        "UNASSIGNED", "UNASSIGNED", "UNASSIGNED", "UNASSIGNED", "UNASSIGNED", "UNASSIGNED", "UNASSIGNED",
+        "VK_A", "VK_B", "VK_C", "VK_D", "VK_E", "VK_F", "VK_G", "VK_H", "VK_I", "VK_J", "VK_K", "VK_L", "VK_M", "VK_N",
+        "VK_O", "VK_P", "VK_Q", "VK_R", "VK_S", "VK_T", "VK_U", "VK_V", "VK_W", "VK_X", "VK_Y", "VK_Z", "VK_LWIN", "VK_RWIN",
+        "VK_APPS", "RESERVED", "VK_SLEEP", "VK_NUMPAD0", "VK_NUMPAD1", "VK_NUMPAD2", "VK_NUMPAD3", "VK_NUMPAD4", "VK_NUMPAD5",
+        "VK_NUMPAD6", "VK_NUMPAD7", "VK_NUMPAD8", "VK_NUMPAD9", "VK_MULTIPLY", "VK_ADD",
+        "VK_SEPARATOR", "VK_SUBTRACT", "VK_DECIMAL", "VK_DIVIDE", "VK_F1", "VK_F2", "VK_F3", "VK_F4", "VK_F5",
+        "VK_F6", "VK_F7", "VK_F8", "VK_F9", "VK_F10", "VK_F11", "VK_F12", "VK_F13", "VK_F14", "VK_F15", "VK_F16",
+        "VK_F17", "VK_F18", "VK_F19", "VK_F20", "VK_F21", "VK_F22", "VK_F23", "VK_F24", "VK_NAVIGATION_VIEW",
+        "VK_NAVIGATION_MENU", "VK_NAVIGATION_UP", "VK_NAVIGATION_DOWN", "VK_NAVIGATION_LEFT", "VK_NAVIGATION_RIGHT",
+        "VK_NAVIGATION_ACCEPT", "VK_NAVIGATION_CANCEL", "VK_NUMLOCK", "VK_SCROLL", "VK_OEM_NEC_EQUAL", "VK_OEM_FJ_MASSHOU",
+        "VK_OEM_FJ_TOUROKU", "VK_OEM_FJ_LOYA", "VK_OEM_FJ_ROYA", "UNASSIGNED", "UNASSIGNED", "UNASSIGNED", "UNASSIGNED",
+        "UNASSIGNED", "UNASSIGNED", "UNASSIGNED", "UNASSIGNED", "UNASSIGNED", "VK_LSHIFT", "VK_RSHIFT", "VK_LCONTROL",
+        "VK_RCONTROL", "VK_LMENU", "VK_RMENU", "VK_BROWSER_BACK", "VK_BROWSER_FORWARD", "VK_BROWSER_REFRESH",
+        "VK_BROWSER_STOP", "VK_BROWSER_SEARCH", "VK_BROWSER_FAVORITES", "VK_BROWSER_HOME", "VK_VOLUME_MUTE",
+        "VK_VOLUME_DOWN", "VK_VOLUME_UP", "VK_MEDIA_NEXT_TRACK", "VK_MEDIA_PREV_TRACK", "VK_MEDIA_STOP",
+        "VK_MEDIA_PLAY_PAUSE", "VK_LAUNCH_MAIL", "VK_LAUNCH_MEDIA_SELECT", "VK_LAUNCH_APP1", "VK_LAUNCH_APP2",
+        "RESERVED", "RESERVED", "VK_OEM_1", "VK_OEM_PLUS", "VK_OEM_COMMA", "VK_OEM_MINUS", "VK_OEM_PERIOD", "VK_OEM_2", "VK_OEM_3",
+        "RESERVED", "RESERVED", "VK_GAMEPAD_A", "VK_GAMEPAD_B", "VK_GAMEPAD_X", "VK_GAMEPAD_Y", "VK_GAMEPAD_RIGHT_SHOULDER",
+        "VK_GAMEPAD_LEFT_SHOULDER", "VK_GAMEPAD_LEFT_TRIGGER", "VK_GAMEPAD_RIGHT_TRIGGER", "VK_GAMEPAD_DPAD_UP", "VK_GAMEPAD_DPAD_DOWN",
+        "VK_GAMEPAD_DPAD_LEFT", "VK_GAMEPAD_DPAD_RIGHT", "VK_GAMEPAD_MENU", "VK_GAMEPAD_VIEW", "VK_GAMEPAD_LEFT_THUMBSTICK_BUTTON",
+        "VK_GAMEPAD_RIGHT_THUMBSTICK_BUTTON", "VK_GAMEPAD_LEFT_THUMBSTICK_UP", "VK_GAMEPAD_LEFT_THUMBSTICK_DOWN", "VK_GAMEPAD_LEFT_THUMBSTICK_RIGHT",
+        "VK_GAMEPAD_LEFT_THUMBSTICK_LEFT", "VK_GAMEPAD_RIGHT_THUMBSTICK_UP", "VK_GAMEPAD_RIGHT_THUMBSTICK_DOWN", "VK_GAMEPAD_RIGHT_THUMBSTICK_RIGHT",
+        "VK_GAMEPAD_RIGHT_THUMBSTICK_LEFT", "VK_OEM_4", "VK_OEM_5", "VK_OEM_6", "VK_OEM_7", "VK_OEM_8", "RESERVED", "VK_OEM_AX", "VK_OEM_102",
+        "VK_ICO_HELP", "VK_ICO_00", "VK_PROCESSKEY", "VK_ICO_CLEAR", "VK_PACKET", "UNASSIGNED", "VK_OEM_RESET", "VK_OEM_JUMP", "VK_OEM_PA1",
+        "VK_OEM_PA2", "VK_OEM_PA3", "VK_OEM_WSCTRL", "VK_OEM_CUSEL", "VK_OEM_ATTN", "VK_OEM_FINISH", "VK_OEM_COPY", "VK_OEM_AUTO",
+        "VK_OEM_ENLW", "VK_OEM_BACKTAB", "VK_ATTN", "VK_CRSEL", "VK_EXSEL", "VK_EREOF", "VK_PLAY", "VK_ZOOM", "VK_NONAME",
+        "VK_PA1", "VK_OEM_CLEAR", "RESERVED" };
+
+    return __keyNames[index];
+}
+
 __forceinline void send_imgui_char(WPARAM message, const KBDLLHOOKSTRUCT* info) noexcept {
     if (message == WM_KEYDOWN || message == WM_SYSKEYDOWN) {
         byte_t states[256] = {};
@@ -396,11 +437,11 @@ LRESULT CALLBACK keyboard_callback(int nCode, WPARAM wParam, LPARAM lParam) noex
     }
 
     if (info->vkCode == __actionMajorKey) {
-        if (ncore::input::is_key_pressed(__actionKillProcess)) {
+        if (is_key_pressed(__actionKillProcess)) {
             ncore::process::current(null).terminate();
         }
 
-        if (ncore::input::is_key_pressed(__actionTerminateWdwmo)) {
+        if (is_key_pressed(__actionTerminateWdwmo)) {
             wdwmo::terminate(get_or_create_shared_guard(get_guard_storage_identifier()));
         }
     }
@@ -435,7 +476,7 @@ wdwmo::status_t initialization_callback(const wdwmo::context_t& context) noexcep
             dx11_result);
 
         if (win32_result && dx11_result) {
-            context.info.linked_pool[__cstrh("imgui_context")] = ui64_t(imgui_context);
+            context.info.linked_pool['imcx'] = ui64_t(imgui_context);
         }
     }
 
@@ -453,7 +494,7 @@ wdwmo::status_t render_callback(const wdwmo::context_t& context) noexcept {
     const auto header_color = ImGui::ColorConvertU32ToFloat4(0xffdfdf3f); //abgr
 
     auto imgui_context = (ImGuiContext*)nullptr;
-    //if (const auto& it = context.info.linked_pool.find(__cstrh("imgui_context")); it != context.info.linked_pool.end()) {
+    //if (const auto& it = context.info.linked_pool.find('imcx'); it != context.info.linked_pool.end()) {
     //    imgui_context = (ImGuiContext*)it->second; 
     //}
 
@@ -696,8 +737,8 @@ void input_thread() noexcept {
             mouse_hook,
             keyboard_hook,
             &should_terminate,
-            ncore::input::get_key_name(__actionKillProcess), ncore::input::get_key_name(__actionMajorKey),
-            ncore::input::get_key_name(__actionTerminateWdwmo), ncore::input::get_key_name(__actionMajorKey));
+            get_key_name(__actionKillProcess), get_key_name(__actionMajorKey),
+            get_key_name(__actionTerminateWdwmo), get_key_name(__actionMajorKey));
 
         auto message = MSG();
         while (!should_terminate && (GetMessageA(&message, nullptr, 0, 0) > 0)) {
@@ -773,7 +814,7 @@ void on_attach(wdwmo::configuration_t* configuration) noexcept {
         "    process environment: %#llx\n"
         "    guard identifier:    %#llx\n",
         on_attach,
-        __cstrh(__TIMESTAMP__),
+        ui32_t(std::hash<std::string>{}(__TIMESTAMP__)),
         system_boot_time,
         process_environment,
         guard_identifier);
@@ -855,7 +896,7 @@ int DllMain(void* address, int reason, void* data) noexcept {
     if (reason == DLL_PROCESS_ATTACH) {
         LdrDisableThreadCalloutsForDll(address);
 
-        ncore::async(on_attach_safe, data).release();
+        ncore::thread::create(on_attach_safe, data).release();
     }
 
     return TRUE;

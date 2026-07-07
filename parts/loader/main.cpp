@@ -1,6 +1,15 @@
 //windows dwm overlay sample loader
 
-#include "../../../ncore/source/ncore.h"
+#if __has_include("../../../ncore/source/ncore.h")
+#define NCORE_FULL
+#include "../../../ncore/source/ncore.h" 
+#else
+#define NCORE_CUT
+#include <ncore/process.hpp>
+#include <ncore/utils.hpp>
+#include <ncore/file.hpp>
+#include <ncore/web.hpp>
+#endif
 
 #define WDWMO_WORKING_SET_PUBLIC
 
@@ -11,6 +20,8 @@
 #pragma comment(lib, "nweb.lib")
 
 #define conlog wdwmcd::debug::conlogf
+
+using namespace ncore::types;
 
 wdwmcd::status_t get_configuration(std::string dwmcore_path, std::string dxgi_path, wdwmo::configuration_t& _result) {
 	auto directory = ncore::system_directory();
