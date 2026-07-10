@@ -1,0 +1,37 @@
+name: Build
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: ${{ matrix.configuration }} x64
+    runs-on: windows-2022
+
+    strategy:
+      fail-fast: false
+      matrix:
+        configuration:
+          - debug
+          - release
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v3
+        with:
+          msbuild-architecture: x64
+
+      - name: Build solution
+        run: >
+          msbuild wdwmo.sln
+          /m
+          /t:Build
+          /p:Configuration=${{ matrix.configuration }}
+          /p:Platform=x64
+          /verbosity:minimal
