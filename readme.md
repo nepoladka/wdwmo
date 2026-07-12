@@ -1,3 +1,5 @@
+![Build action badge](https://github.com/nepoladka/wdwmo/actions/workflows/build.yml/badge.svg)
+
 # wdwmo — Windows DWM Overlay
 
 **A Windows Desktop Window Manager overlay implemented through an internal DirectX render-pipeline hook in `dwm.exe`.**
@@ -9,8 +11,8 @@
 
 ## Contents
 
-- [Features](#features)
 - [Demonstration and tested configurations](#demonstration-and-tested-configurations)
+- [Features](#features)
 - [Usage, API, integration model](#usage-api-integration-model)
 - [TODO](#todo)
 - [Explanation](#explanation)
@@ -29,6 +31,32 @@
   - [Project architecture](#project-architecture)
   - [Multiple initialization](#multiple-initialization-1)
 - [Licensing](#licensing)
+
+---
+
+## Demonstration and tested configurations
+
+### Windows 10 22H2 — real machine, NVIDIA
+
+![Windows 10 22H2, build 19045.6466, real NVIDIA system](.screenshots/win10-22h2-19045-6466-real.png)
+
+### Windows 11 25H2 — real machine, NVIDIA
+
+![Windows 11 25H2, build 26200.8037, real NVIDIA system](.screenshots/win11-25h2-26200-8037-real.png)
+
+### Windows 11 25H2 — VMware virtual machine
+
+![Windows 11 25H2, build 26200.8655, VMware virtual machine](.screenshots/win11-25h2-26200-8655-virtual.png)
+
+### Tested configurations
+
+| Environment | Build | Observed DWM implementation | Resource access |
+| --- | ---: | --- | --- |
+| Windows 10 22H2, real NVIDIA system | 19045.6466 | `CLegacyRenderTarget` / `CLegacySwapChain` | legacy DXGI chain |
+| Windows 11 25H2, VMware | 26200.8655 | legacy-style path similar to Windows 10 | modern internal buffer path and legacy fallback both work |
+| Windows 11 25H2, real NVIDIA system | 26200.8037 | `CDDisplayRenderTarget` / `CDDisplaySwapChain` | internal physical back buffer → D3D11 resource |
+
+These names describe the configurations observed during research. The selected path is not determined solely by the Windows version. GPU vendor, display driver, virtualization, and the compositor environment can cause the same Windows build to instantiate a different implementation.
 
 ---
 
@@ -65,32 +93,6 @@ All offsets currently required by the core are recovered from the supplied `dwmc
 ### No hardcoded monitor index
 
 The core does not assume that the target is the primary display or that output zero corresponds to the desired screen. Rendering contexts are associated with the actual DWM output object.
-
----
-
-## Demonstration and tested configurations
-
-### Windows 10 22H2 — real machine, NVIDIA
-
-![Windows 10 22H2, build 19045.6466, real NVIDIA system](.screenshots/win10-22h2-19045-6466-real.png)
-
-### Windows 11 25H2 — real machine, NVIDIA
-
-![Windows 11 25H2, build 26200.8037, real NVIDIA system](.screenshots/win11-25h2-26200-8037-real.png)
-
-### Windows 11 25H2 — VMware virtual machine
-
-![Windows 11 25H2, build 26200.8655, VMware virtual machine](.screenshots/win11-25h2-26200-8655-virtual.png)
-
-### Tested configurations
-
-| Environment | Build | Observed DWM implementation | Resource access |
-| --- | ---: | --- | --- |
-| Windows 10 22H2, real NVIDIA system | 19045.6466 | `CLegacyRenderTarget` / `CLegacySwapChain` | legacy DXGI chain |
-| Windows 11 25H2, VMware | 26200.8655 | legacy-style path similar to Windows 10 | modern internal buffer path and legacy fallback both work |
-| Windows 11 25H2, real NVIDIA system | 26200.8037 | `CDDisplayRenderTarget` / `CDDisplaySwapChain` | internal physical back buffer → D3D11 resource |
-
-These names describe the configurations observed during research. The selected path is not determined solely by the Windows version. GPU vendor, display driver, virtualization, and the compositor environment can cause the same Windows build to instantiate a different implementation.
 
 ---
 
