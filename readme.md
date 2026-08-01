@@ -12,6 +12,7 @@
 ## Contents
 
 - [Demonstration and tested configurations](#demonstration-and-tested-configurations)
+  - [Tested configurations](#tested-configurations)
 - [Features](#features)
 - [Usage, API, integration model](#usage-api-integration-model)
 - [TODO](#todo)
@@ -50,11 +51,12 @@
 
 ### Tested configurations
 
-| Environment | Build | Observed DWM implementation | Resource access |
-| --- | ---: | --- | --- |
-| Windows 10 22H2, real NVIDIA system | 19045.6466 | `CLegacyRenderTarget` / `CLegacySwapChain` | legacy DXGI chain |
-| Windows 11 25H2, VMware | 26200.8655 | legacy-style path similar to Windows 10 | modern internal buffer path and legacy fallback both work |
-| Windows 11 25H2, real NVIDIA system | 26200.8037 | `CDDisplayRenderTarget` / `CDDisplaySwapChain` | internal physical back buffer → D3D11 resource |
+| Environment | Build | Observed DWM implementation | Resource access | Analyzed |
+| --- | --- | --- | --- | --- |
+| Windows 10 22H2, real **NVIDIA** system | 19045.6466 | `CLegacyRenderTarget` / `CLegacySwapChain` | legacy DXGI chain | Static, Dynamic |
+| Windows 11 24H2, real **NVIDIA** system | 26100.1 | - | - | Static |
+| Windows 11 25H2, **VMware** | 26200.8655 | legacy-style path similar to Windows 10 | modern internal buffer path and legacy fallback both work | Static, Dynamic |
+| Windows 11 25H2, real **NVIDIA** system | 26200.8037 | `CDDisplayRenderTarget` / `CDDisplaySwapChain` | internal physical back buffer -> D3D11 resource | Static, Dynamic |
 
 These names describe the configurations observed during research. The selected path is not determined solely by the Windows version. GPU vendor, display driver, virtualization, and the compositor environment can cause the same Windows build to instantiate a different implementation.
 
@@ -686,12 +688,12 @@ Now that we have established the complete set of items required for the job, we 
 | Name | Type | Kind | Target |
 | --- | --- | --- | --- |
 | `present` | rva | static | `COverlayContext::Present` |
-| `render_target` | structure | static | `COverlayContext` → `C...RenderTarget` |
+| `render_target` | structure | static | `COverlayContext` -> `C...RenderTarget` |
 | `dxgi_output_vftable` | rva | static | ``const ATL::CComObject<class CDXGIOutput>::`vftable'{for `IDXGIOutputDWM'}`` |
-| `dxgi_output` | structure | runtime | `C...RenderTarget` → `IDXGIOutputDWM` |
-| `dxgi_swap_chain` | structure | static | `IOverlaySwapChain` → `IDXGISwapChainDWM` |
-| `get_physical_back_buffer` | vftable | static | `IOverlaySwapChain::VFTable` → `GetPhysicalBackBuffer` |
-| `get_d3d11_resource` | vftable | static | `ISwapChainBuffer::VFTable` → `GetD3D11Resource` |
+| `dxgi_output` | structure | runtime | `C...RenderTarget` -> `IDXGIOutputDWM` |
+| `dxgi_swap_chain` | structure | static | `IOverlaySwapChain` -> `IDXGISwapChainDWM` |
+| `get_physical_back_buffer` | vftable | static | `IOverlaySwapChain::VFTable` -> `GetPhysicalBackBuffer` |
+| `get_d3d11_resource` | vftable | static | `ISwapChainBuffer::VFTable` -> `GetD3D11Resource` |
 
 Their purposes are:
 
@@ -801,36 +803,54 @@ IUnknown* get_dxgi_dwm_output(const i32_t render_target_offset, const ui32_t vft
 
 #### `offsets.dxgi_swap_chain`:
 
-Similar to `offsets.render_target`, since I couldn't find any direct getters, I need to find a way to use the required instances, retrieving them from some structure we could access from a hook. Luckily, such a place exists - `CLegacySwapChain::PresentMPO`. 
+Similar to `offsets.render_target`, since I couldn't find any direct getters, I need to find a way to use the required instances, retrieving them from some structure we could access from a hook. Luckily, such a place exists - `CLegacySwapChain::PresentMPO` (or `CLegacySwapChain::PresentDFlip`).
 
 ![IDA CLegacySwapChain::PresentMPO pseudocode](.screenshots/wdwmo-offsets-dxgiswapchain.png)
 
 In this function, `CD3DDevice::PresentMPO` is called, which takes the swapchain we need as the second argument, so I simply look for these two functions, in the first I find the place where the second is called and from there I go back until I find where the second argument is formed.
 
 ```cpp
-auto dxgi_swapchain_offset = ui64_t();
+_DXGISCDisassemblyBegin:
+    auto expected_delta = ui64_t(cd3ddevice_present_mpo_offset) - ui64_t(target_function_offset);
 
-for (auto i = 0ui64, c = function_code.size(); i < c; i++) {
-    const auto& instruction = function_code[i];
-    if (*ui32_p(instruction.info.Mnemonic) != 'llac') continue; //is instruction is "call"
+    ...
 
-    if (instruction.info.AddrValue != expected_delta) continue; //is call for CD3DDevice::PresentMPO
+    auto dxgi_swapchain_offset = ui64_t();
 
-    for (auto j = i, s = 0ui64; j > s; j--) {
-        const auto& second = function_code[j];
-		if (*ui32_p(second.info.Mnemonic) != 'vom') continue; //is instruction is "mov"
-		
-		if (*ui32_p(second.operands[0].OpMnemonic) != 'xdr') continue; //is first operand is "rdx"
+    for (auto i = 0ui64, c = function_code.size(); i < c; i++) {
+        const auto& instruction = function_code[i];
+        if (*ui32_p(instruction.info.Mnemonic) != 'llac') continue;
 
-		dxgi_swapchain_offset = second.operands[1].Memory.Displacement;
+        if (instruction.info.AddrValue != expected_delta) continue;
 
-		conlog("[d] disassembled dxgi swap chain storing instruction: \"%s\"\n", second.complete_instruction);
+        for (auto j = i, s = 0ui64; j > s; j--) {
+            const auto& second = function_code[j];
+            if (*ui32_p(second.info.Mnemonic) != 'vom') continue;
 
-		goto _DXGISCDisassemblyEnd;
-	}
-}
+            if (*ui32_p(second.operands[0].OpMnemonic) != 'xdr') continue;
+
+            dxgi_swapchain_offset = second.operands[1].Memory.Displacement;
+
+            conlog("[d] disassembled dxgi swap chain storing instruction: \"%s\"\n", second.complete_instruction);
+
+            goto _DXGISCDisassemblyEnd;
+        }
+    }
+
 _DXGISCDisassemblyEnd:
+    if (!dxgi_swapchain_offset && try_dflip_onfail) {
+        //retry using dflip once
+
+        try_dflip_onfail = false;
+        target_function_offset = clegacy_swap_chain_present_dflip_offset;
+
+        conlog("[d] [!] dxgi swap chain offset failed, retrying using PresentDFlip function\n");
+
+        goto _DXGISCDisassemblyBegin;
+    }
 ```
+
+Also, on some Windows versions (such as Win11 24H2 (`26100.1`)) CD3DDevice::PresentMPO can only be called from `CLegacySwapChain::PresentDFlip`, so a fallback was added. In the future, it will probably be possible to leave only DFlip, as it is also exist on newer versions.
 
 ---
 

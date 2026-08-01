@@ -934,12 +934,14 @@ namespace wdwmcd {
             };
 
             auto clegacy_swap_chain_present_mpo = ui32_t();
+            auto clegacy_swap_chain_present_dflip = ui32_t(); //for win11 24h2 (26100.1)
             auto cd3ddevice_present_mpo = ui32_t();
             auto coverlay_context_constructor = ui32_t();
 
             symbol_request_t requests[] = {
                 { "COverlayContext::Present", ui32_p(&_result.offsets.present), true, false}, //also, we can hook coverlaycontext::islegacyrequired, because this is first call and first two parameters registers are equals
                 { "CLegacySwapChain::PresentMPO", &clegacy_swap_chain_present_mpo, true, false },
+                { "CLegacySwapChain::PresentDFlip", &clegacy_swap_chain_present_dflip, false, false },
                 { "CD3DDevice::PresentMPO", &cd3ddevice_present_mpo, true, false },
                 { "??0COverlayContext@@", &coverlay_context_constructor, true, true }
             };
@@ -1071,35 +1073,44 @@ namespace wdwmcd {
             }
 
             {
-                auto clegacy_swap_chain_present_mpo_offset = utils::rva_to_file_offset(
-                    dwmcore_target.image.data,
-                    dwmcore_target.image.size,
-                    clegacy_swap_chain_present_mpo);
-
                 auto cd3ddevice_present_mpo_offset = utils::rva_to_file_offset(
                     dwmcore_target.image.data,
                     dwmcore_target.image.size,
                     cd3ddevice_present_mpo);
 
-                auto expected_delta = ui64_t(cd3ddevice_present_mpo_offset) - ui64_t(clegacy_swap_chain_present_mpo_offset);
+                auto clegacy_swap_chain_present_mpo_offset = utils::rva_to_file_offset(
+                    dwmcore_target.image.data,
+                    dwmcore_target.image.size,
+                    clegacy_swap_chain_present_mpo);
+
+                auto clegacy_swap_chain_present_dflip_offset = clegacy_swap_chain_present_dflip ? utils::rva_to_file_offset(
+                    dwmcore_target.image.data,
+                    dwmcore_target.image.size,
+                    clegacy_swap_chain_present_dflip) : ui32_t();
+
+                auto try_dflip_onfail = bool(clegacy_swap_chain_present_dflip_offset);
+                auto target_function_offset = clegacy_swap_chain_present_mpo_offset;
+
+            _DXGISCDisassemblyBegin:
+                auto expected_delta = ui64_t(cd3ddevice_present_mpo_offset) - ui64_t(target_function_offset);
 
                 auto function_size = ui32_t();
 
                 if (get_function_size_from_pdata(
                     dwmcore_target.image.data,
                     dwmcore_target.image.size,
-                    clegacy_swap_chain_present_mpo,
+                    target_function_offset,
                     function_size)) {
-                    conlog("[d] CLegacySwapChain::PresentMPO size is %#lx\n", function_size);
+                    conlog("[d] dxgi swap chain legacy present function (%#llx) size is %#lx\n", target_function_offset, function_size);
                 }
                 else {
-                    conlog("[d] failed to get CLegacySwapChain::PresentMPO size from .pdata, falling back to 0x400\n");
+                    conlog("[d] failed to get dxgi swap chain legacy present function (%#llx) size from .pdata, falling back to 0x400\n", target_function_offset);
 
                     function_size = 0x400;
                 }
 
                 auto function_code = ncore::disassembly::code(
-                    byte_p(dwmcore_target.image.data) + clegacy_swap_chain_present_mpo_offset,
+                    byte_p(dwmcore_target.image.data) + target_function_offset,
                     function_size);
 
                 auto dxgi_swapchain_offset = ui64_t();
@@ -1123,7 +1134,18 @@ namespace wdwmcd {
                         goto _DXGISCDisassemblyEnd;
                     }
                 }
+
             _DXGISCDisassemblyEnd:
+                if (!dxgi_swapchain_offset && try_dflip_onfail) {
+                    //retry using dflip
+
+                    try_dflip_onfail = false;
+                    target_function_offset = clegacy_swap_chain_present_dflip_offset;
+
+                    conlog("[d] [!] dxgi swap chain offset failed, retrying using PresentDFlip function\n");
+
+                    goto _DXGISCDisassemblyBegin;
+                }
 
                 conlog("[d] disassembled dxgi swap chain offset: %#x (%d)\n", ui32_t(dxgi_swapchain_offset), dxgi_swapchain_offset);
 

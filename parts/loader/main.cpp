@@ -24,8 +24,8 @@
 using namespace ncore::types;
 
 wdwmcd::status_t get_configuration(std::string dwmcore_path, std::string dxgi_path, wdwmo::configuration_t& _result) {
-	auto directory = ncore::system_directory();
-	//auto directory = std::string("G:\\work\\dwm\\win11-25h2\\");
+	//auto directory = ncore::system_directory(); /*
+	auto directory = std::string("G:\\work\\dwm\\win11-24h2\\"); //*/
 
 	if (dwmcore_path.empty()) {
 		dwmcore_path = directory + "dwmcore.dll";
@@ -169,7 +169,7 @@ int main(int argc, char** argv) {
 	auto configuration = wdwmo::configuration_t();
 	auto dump_status = get_configuration(dwmcore_path, dxgi_path, configuration);
 
-	conlog("[l] dump status is %d, raw:\n    ", dump_status);
+	conlog("[l] dump status is %d (%s), raw:\n    ", dump_status, dump_status.c_str());
 
 	for (auto i = 0, j = 0; i < sizeof(configuration); i++) {
 		conlog("0x%02x", ncore::types::byte_p(&configuration)[i]);
