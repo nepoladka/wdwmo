@@ -1524,7 +1524,13 @@ namespace wdwmo {
             *(void**)&callback = &on_initialize<typeofrn(resource)>;
         }
         else if (configuration.offsets.is_legacy_available()) {
-            auto chain = details::retrieve_dxgi_swap_chain(configuration.offsets.dxgi_swap_chain, overlay_swap_chain, dxgi_bounds);
+            auto swap_chain_offset = configuration.offsets.dxgi_swap_chain;
+            // On 22631 the PDB offset is relative to CLegacySwapChain, but
+            // Present receives its IOverlaySwapChain interface subobject.
+            if (ncore::get_system_version().build == 22631 && swap_chain_offset == 0xE0)
+                swap_chain_offset = -0xD0;
+
+            auto chain = details::retrieve_dxgi_swap_chain(swap_chain_offset, overlay_swap_chain, dxgi_bounds);
             if (!chain) return status_t::cant_retrieve_dxgi_chain;
 
             source = chain;
@@ -1574,6 +1580,21 @@ namespace wdwmo {
         }
 
         device_context->OMSetRenderTargets(1, &previous_render_target_view, previous_depth_stencil_view);
+
+        // This legacy path composites over the full buffer. DWM must present
+        // the same area or moving overlay windows leave stale pixels behind.
+        if (ncore::get_system_version().build == 22631 && result == status_t::success) {
+            const auto& buffer = environment->chain_info.buffer;
+            if (buffer.width && buffer.height) {
+                call_info.dirty_rects.custom = {{
+                    .left = 0,
+                    .top = 0,
+                    .right = i32_t(buffer.width),
+                    .bottom = i32_t(buffer.height)
+                }};
+                call_info.dirty_rects.changed = true;
+            }
+        }
 
         return result;
     }
@@ -1908,7 +1929,8 @@ namespace wdwmo {
         }
         else {
             auto get_build_compatible_present_wrapper = [](ui32_t build) noexcept -> address_t {
-                if (build <= 19045) return wrapped_present_win10;
+                // 22631.6060 has the six-argument Present ABI.
+                if (build <= 19045 || build == 22631) return wrapped_present_win10;
 
                 if (build >= 22000) return wrapped_present_win11;
 

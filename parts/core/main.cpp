@@ -395,10 +395,10 @@ LRESULT CALLBACK mouse_callback(int nCode, WPARAM wParam, LPARAM lParam) noexcep
 
     if (ImGui::GetCurrentContext()) { //at least one imgui context exist
         auto monitor = MonitorFromPoint(info->pt, MONITOR_DEFAULTTONEAREST);
-        auto scale = wdwmo::utils::get_monitor_scale(monitor);
         auto rect = wdwmo::utils::get_monitor_rect(monitor);
 
-        auto position = wtoverlay::make_relative_position(*(vec2i32*)&info->pt, rect, *(vec2f*)&scale);
+        // WH_MOUSE_LL coordinates and the DWM buffer are both physical pixels.
+        auto position = vec2i32{ info->pt.x - rect.left, info->pt.y - rect.top };
 
         const auto wparam = translate_mouse_wparam(wParam, info);
         const auto lparam = MAKELPARAM(position.x, position.y);
